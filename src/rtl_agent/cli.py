@@ -4,7 +4,9 @@ import argparse
 from pathlib import Path
 
 from .checks import render_rule_list
+from .checks.llm_rules import LLMIntegrationReviewRule
 from .indexer import build_index
+from .llm import OpenAICompatibleClient, has_api_key, load_llm_config
 from .reducer import render_llm_context, render_reduced_json, render_reduction_rules
 from .reports import render_module_summary, render_soc_report, write_artifacts
 
@@ -26,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
     check_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
     check_p.add_argument("--rule", action="append", default=[], help="Run only one rule ID or category. Can be repeated.")
     check_p.add_argument("--include-orphans", action="store_true", help="Report unreachable modules as findings.")
+    check_p.add_argument("--llm", action="store_true", help="Run optional OpenAI-compatible LLM review over reduced context.")
+    check_p.add_argument("--llm-config", default="rtl-agent.toml", help="Path to LLM config file.")
+    check_p.add_argument("--env-file", default=".env.local", help="Path to env file containing the API key.")
+    check_p.add_argument("--llm-max-modules", type=int, default=80)
+    check_p.add_argument("--llm-max-interface-stubs", type=int, default=120)
 
     ask_p = sub.add_parser("ask", help="Answer with local structured memory. LLM wiring is reserved for the next phase.")
     ask_p.add_argument("rtl_root")
@@ -65,6 +72,9 @@ def main(argv: list[str] | None = None) -> int:
             render_soc_report(index, rule_ids=args.rule, include_orphan=args.include_orphans),
             encoding="utf-8",
         )
+        if args.llm:
+            llm_review = _run_llm_review(index, args)
+            (out / "llm_review.md").write_text(llm_review, encoding="utf-8")
         print(f"Wrote SOC integration report to {out / 'soc_integration_report.md'}")
         return 0
     if args.cmd == "ask":
@@ -109,6 +119,27 @@ def _local_answer(index, question: str) -> str:
 def _build_index_from_args(root: Path, args) -> object:
     top_file = Path(args.top_file) if getattr(args, "top_file", None) else None
     return build_index(root, top=args.top, top_file=top_file)
+
+
+def _run_llm_review(index, args) -> str:
+    config = load_llm_config(Path(args.llm_config), Path(args.env_file))
+    if not has_api_key(config):
+        return (
+            "# LLM Review\n\n"
+            f"LLM review was requested, but no usable API key was found for `{config.api_key_env}`.\n\n"
+            "Add a local `.env.local` file or set the environment variable, then rerun with `--llm`.\n"
+        )
+    client = OpenAICompatibleClient(config)
+    rule = LLMIntegrationReviewRule(
+        client=client,
+        max_modules=args.llm_max_modules,
+        max_interface_stubs=args.llm_max_interface_stubs,
+    )
+    findings = rule.run(index)
+    lines = ["# LLM Review", ""]
+    for finding in findings:
+        lines.extend([finding.message, ""])
+    return "\n".join(lines).rstrip() + "\n"
 
 
 if __name__ == "__main__":

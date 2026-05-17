@@ -19,6 +19,7 @@ python -m rtl_agent check examples/tiny_soc --top soc_top -o out
 python -m rtl_agent list-rules
 python -m rtl_agent list-reduction-rules
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
+python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
 python -m unittest discover -s tests -v
 ```
@@ -68,6 +69,17 @@ python -m rtl_agent check path/to/rtl --top my_soc_top --rule hierarchy -o out/h
 ```
 
 The current checks do not depend on an LLM. An optional OpenAI-compatible review rule is reserved for later stages, where the model should consume reduced context and explain or generalize script findings rather than replace structural extraction.
+
+To run the optional LLM review:
+
+```powershell
+copy .env.example .env.local
+copy rtl-agent.example.toml rtl-agent.toml
+# edit .env.local and set OPENAI_API_KEY
+python -m rtl_agent check path/to/rtl --top my_soc_top --llm -o out/my_soc
+```
+
+The model output is written to `out/my_soc/llm_review.md`. The API key file is ignored by git.
 
 ## RTL Reduction
 

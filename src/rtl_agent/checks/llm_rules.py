@@ -15,13 +15,15 @@ class LLMIntegrationReviewRule(ScriptRule):
     description = "Optional OpenAI-compatible review over reduced RTL context. Disabled unless an LLM client is supplied."
     requires_llm = True
 
-    def __init__(self, client: OpenAICompatibleClient | None = None):
+    def __init__(self, client: OpenAICompatibleClient | None = None, max_modules: int = 80, max_interface_stubs: int = 120):
         self.client = client
+        self.max_modules = max_modules
+        self.max_interface_stubs = max_interface_stubs
 
     def run(self, index: DesignIndex) -> list[Finding]:
         if self.client is None:
             return []
-        context = render_llm_context(index, max_modules=80)
+        context = render_llm_context(index, max_modules=self.max_modules, max_interface_stubs=self.max_interface_stubs)
         prompt = (
             "Review this reduced RTL integration context. Return concise findings with rule-like titles, "
             "source references, and uncertainty. Do not invent facts beyond the context.\n\n"

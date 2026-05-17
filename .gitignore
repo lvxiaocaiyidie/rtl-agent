@@ -5,6 +5,8 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+.env
+.env.local
 out/
 third_party/
 *.egg-info/
