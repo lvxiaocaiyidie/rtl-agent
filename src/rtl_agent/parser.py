@@ -50,6 +50,8 @@ def parse_file(path: Path, root: Path) -> list[Module]:
         module.procedural_blocks = _extract_procedural(body, rel, start + header.count("\n"))
         module.clocks = _detect_names(module, ("clk", "clock", "aclk"))
         module.resets = _detect_names(module, ("rst", "reset", "aresetn", "rst_n"))
+        module.subsystem = _infer_subsystem(rel, module.name)
+        module.role = _infer_role(module)
         modules.append(module)
     return modules
 
@@ -186,7 +188,70 @@ def _detect_names(module: Module, needles: tuple[str, ...]) -> list[str]:
     names = [p.name for p in module.ports] + [s.name for s in module.signals]
     found = []
     for name in names:
-        low = name.lower()
-        if any(n in low for n in needles):
+        if _looks_like_clock(name) if "clk" in needles else _looks_like_reset(name):
             found.append(name)
     return sorted(set(found))
+
+
+def _looks_like_clock(name: str) -> bool:
+    low = name.lower()
+    if low in {"clk", "clock", "aclk", "hclk", "pclk", "cpuclk"}:
+        return True
+    return (
+        low.endswith("_clk")
+        or low.endswith("_clock")
+        or low.endswith("clk")
+        or low.startswith("clk_")
+        or low.startswith("clock_")
+    )
+
+
+def _looks_like_reset(name: str) -> bool:
+    low = name.lower()
+    if low in {"rst", "reset", "resetn", "rst_n", "rst_b", "aresetn", "hrst_b", "cpurst_b"}:
+        return True
+    return (
+        low.endswith("_rst")
+        or low.endswith("_reset")
+        or low.endswith("_rst_n")
+        or low.endswith("_rst_b")
+        or low.endswith("rst_b")
+        or low.endswith("rst_n")
+        or low.startswith("rst_")
+        or low.startswith("reset_")
+    )
+
+
+def _infer_subsystem(rel_path_text: str, module_name: str) -> str:
+    low = (rel_path_text + "/" + module_name).lower()
+    for token in ("biu", "ciu", "clk", "cpu", "falu", "fpu", "had", "idu", "ifu", "iu", "l2c", "lsu", "mmu", "pad", "plic", "pmu", "rmu", "rtu", "rst", "sysio", "tdt", "vfalu", "vector"):
+        if f"/{token}/" in low or module_name.lower().startswith(f"ct_{token}_") or module_name.lower().startswith(f"{token}_"):
+            return token
+    if "axi" in low:
+        return "axi"
+    if "apb" in low:
+        return "apb"
+    if "ahb" in low:
+        return "ahb"
+    if "uart" in low:
+        return "uart"
+    return "unknown"
+
+
+def _infer_role(module: Module) -> str:
+    name_text = " ".join([module.name, module.subsystem] + [i.module for i in module.instances] + [i.name for i in module.instances]).lower()
+    port_text = " ".join(p.name for p in module.ports).lower()
+    module_low = module.name.lower()
+    if module.subsystem in {"clk"} or "gated_clk" in module_low or "clk_gen" in module_low or "clock" in module_low:
+        return "clocking"
+    if module.subsystem in {"rst"} or "reset" in module_low or re.search(r"(^|_)rst(_|$)", module_low):
+        return "reset_logic"
+    if "axi" in name_text or "ahb" in name_text or "apb" in name_text or any(proto in port_text for proto in ("awvalid", "arvalid", "haddr", "psel", "pready")):
+        return "bus_or_protocol_logic"
+    if "plic" in name_text or module.subsystem == "plic":
+        return "interrupt_logic"
+    if module.subsystem in {"l2c"} or "cache" in name_text or "icache" in name_text or "dcache" in name_text or "spsram" in name_text or re.search(r"(^|_)ram(_|$)", name_text):
+        return "memory_or_cache"
+    if module.instances:
+        return "integration_wrapper"
+    return "leaf_rtl"

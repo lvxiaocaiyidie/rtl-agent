@@ -9,9 +9,43 @@ from .models import DesignIndex, Module
 def write_artifacts(index: DesignIndex, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "design_index.json").write_text(json.dumps(index.to_dict(), indent=2), encoding="utf-8")
+    (out_dir / "design_overview.md").write_text(render_design_overview(index), encoding="utf-8")
     (out_dir / "hierarchy.md").write_text(render_hierarchy(index), encoding="utf-8")
     (out_dir / "module_summary.md").write_text(render_module_summary(index), encoding="utf-8")
     (out_dir / "esl_model.yaml").write_text(render_esl_model(index), encoding="utf-8")
+
+
+def render_design_overview(index: DesignIndex) -> str:
+    modules = list(index.modules.values())
+    instance_count = sum(len(module.instances) for module in modules)
+    role_counts = _count_by(modules, "role")
+    subsystem_counts = _count_by(modules, "subsystem")
+    lines = [
+        "# Design Overview",
+        "",
+        f"- RTL files: {len(index.files)}",
+        f"- Modules: {len(modules)}",
+        f"- Instances: {instance_count}",
+        f"- Candidate top modules: {len(index.top_modules)}",
+        f"- Diagnostics: {len(index.diagnostics)}",
+        "",
+        "## Top Module Candidates",
+        "",
+    ]
+    ranked_tops = sorted(index.top_modules, key=lambda n: len(index.modules[n].instances) if n in index.modules else 0, reverse=True)
+    for name in ranked_tops[:40]:
+        source = index.modules[name].source.label() if name in index.modules else ""
+        inst_count = len(index.modules[name].instances) if name in index.modules else 0
+        lines.append(f"- {name} ({inst_count} instances) `{source}`")
+    if len(ranked_tops) > 40:
+        lines.append(f"- ... {len(ranked_tops) - 40} more")
+    lines.extend(["", "## Roles", ""])
+    for role, count in sorted(role_counts.items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"- {role}: {count}")
+    lines.extend(["", "## Subsystems", ""])
+    for subsystem, count in sorted(subsystem_counts.items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"- {subsystem}: {count}")
+    return "\n".join(lines) + "\n"
 
 
 def render_hierarchy(index: DesignIndex) -> str:
@@ -56,6 +90,8 @@ def _module_summary_lines(module: Module) -> list[str]:
         f"- Parameters: {', '.join(p.name for p in module.parameters) or 'none'}",
         f"- Clocks: {', '.join(module.clocks) or 'not detected'}",
         f"- Resets: {', '.join(module.resets) or 'not detected'}",
+        f"- Subsystem: {module.subsystem}",
+        f"- Role: {module.role}",
         f"- Instances: {', '.join(f'{i.name}:{i.module}' for i in module.instances) or 'none'}",
         f"- Assigns: {len(module.assigns)}",
         f"- Procedural blocks: {', '.join(b.kind for b in module.procedural_blocks) or 'none'}",
@@ -73,6 +109,7 @@ def render_esl_model(index: DesignIndex) -> str:
                 f"  - name: {module.name}",
                 f"    source: {module.source.label()}",
                 f"    role: {_infer_role(module)}",
+                f"    subsystem: {module.subsystem}",
                 "    ports:",
             ]
         )
@@ -115,9 +152,9 @@ def render_soc_report(index: DesignIndex) -> str:
 def run_basic_checks(index: DesignIndex) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     for module in index.modules.values():
-        if module.instances and not module.clocks:
+        if module.instances and not module.clocks and module.role not in {"memory_or_cache"}:
             findings.append(_finding("P2", "No clock detected", f"{module.name} contains sub-instances but no clock-like signal was detected.", module.source.label()))
-        if module.instances and not module.resets:
+        if module.instances and not module.resets and module.role not in {"clocking", "memory_or_cache"}:
             findings.append(_finding("P3", "No reset detected", f"{module.name} contains sub-instances but no reset-like signal was detected.", module.source.label()))
         for inst in module.instances:
             target = index.modules.get(inst.module)
@@ -136,17 +173,16 @@ def _dir_count(module: Module, direction: str) -> int:
 
 
 def _infer_role(module: Module) -> str:
-    text = " ".join([module.name] + [p.name for p in module.ports] + [i.module for i in module.instances]).lower()
-    if "axi" in text or "ahb" in text or "apb" in text:
-        return "bus_or_protocol_logic"
-    if "noc" in text or "router" in text:
-        return "noc_component"
-    if "llc" in text or "cache" in text:
-        return "cache_component"
-    if module.instances:
-        return "integration_wrapper"
-    return "leaf_rtl"
+    return module.role
 
 
 def _finding(severity: str, title: str, message: str, source: str) -> dict[str, str]:
     return {"severity": severity, "title": title, "message": message, "source": source}
+
+
+def _count_by(modules: list[Module], attr: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for module in modules:
+        key = getattr(module, attr)
+        counts[key] = counts.get(key, 0) + 1
+    return counts

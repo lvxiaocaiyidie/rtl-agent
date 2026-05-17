@@ -22,6 +22,7 @@ python -m unittest discover -s tests -v
 Artifacts:
 
 - `out/design_index.json`: structured RTL facts
+- `out/design_overview.md`: compact design-scale overview for large RTL trees
 - `out/hierarchy.md`: module hierarchy
 - `out/module_summary.md`: high-density module memory
 - `out/esl_model.yaml`: ESL-like intermediate model with source line tags
@@ -72,6 +73,19 @@ python -m rtl_agent check third_party/verilog-uart/rtl -o out/verilog-uart
 ```
 
 The GitHub connector was able to read `alexforencich/verilog-uart/rtl/uart_rx.v`, which is a useful Verilog-2001 style smoke case with parameterized module headers, typed ports, registers, continuous assignments, and a sequential `always @(posedge clk)` block. The local network sandbox blocked direct `git clone` during initial development, so this command is documented as the first external validation step once network access is available.
+
+## OpenC910 Validation
+
+The MVP has been exercised on the public OpenC910 RTL tree:
+
+```powershell
+git clone --depth 1 https://github.com/XUANTIE-RV/openc910.git third_party/openc910
+python -m rtl_agent check third_party/openc910/C910_RTL_FACTORY/gen_rtl -o out/openc910_factory
+python -m rtl_agent ask third_party/openc910/C910_RTL_FACTORY/gen_rtl "top modules"
+python -m rtl_agent ask third_party/openc910/C910_RTL_FACTORY/gen_rtl "which modules look like bus fabric?"
+```
+
+On `C910_RTL_FACTORY/gen_rtl`, the tool indexes hundreds of RTL files and thousands of instances, emits a compact `design_overview.md`, and surfaces useful integration findings such as apparently unconnected named ports and missing module definitions. Clock/reset detection is boundary-aware, so names such as `hburst` are not misclassified as reset signals.
 
 ## Publish To GitHub
 

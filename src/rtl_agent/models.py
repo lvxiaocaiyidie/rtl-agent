@@ -69,6 +69,8 @@ class Module:
     imports: list[str] = field(default_factory=list)
     clocks: list[str] = field(default_factory=list)
     resets: list[str] = field(default_factory=list)
+    role: str = "leaf_rtl"
+    subsystem: str = "unknown"
 
 
 @dataclass(slots=True)

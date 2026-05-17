@@ -50,11 +50,18 @@ def _local_answer(index, question: str) -> str:
         hits = []
         for module in index.modules.values():
             hay = " ".join([module.name] + [p.name for p in module.ports] + [i.module for i in module.instances]).lower()
-            if any(token in hay for token in ("axi", "ahb", "apb", "bus", "fabric")):
-                hits.append(f"- {module.name}: {module.source.label()}")
-        return "Possible bus/fabric-related modules:\n" + ("\n".join(hits) if hits else "- none detected")
+            if module.role == "bus_or_protocol_logic" or any(token in hay for token in ("axi", "ahb", "apb", "fabric")):
+                hits.append((len(module.instances), module.name, module.source.label(), module.role))
+        hits.sort(reverse=True)
+        lines = [f"- {name}: {source} ({role}, {inst_count} instances)" for inst_count, name, source, role in hits[:60]]
+        if len(hits) > 60:
+            lines.append(f"- ... {len(hits) - 60} more")
+        return "Possible bus/fabric-related modules:\n" + ("\n".join(lines) if lines else "- none detected")
     if "top" in question:
-        return "Top modules: " + (", ".join(index.top_modules) or "none")
+        ranked = sorted(index.top_modules, key=lambda n: len(index.modules[n].instances) if n in index.modules else 0, reverse=True)
+        return "Top module candidates:\n" + "\n".join(
+            f"- {name}: {index.modules[name].source.label()} ({len(index.modules[name].instances)} instances)" for name in ranked[:40]
+        )
     return render_module_summary(index)
 
 
