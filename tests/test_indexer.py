@@ -13,7 +13,15 @@ class IndexerTests(unittest.TestCase):
         self.assertIn("axi_fabric", index.modules)
         self.assertIn("llc_slice", index.modules)
         self.assertEqual(index.top_modules, ["soc_top"])
+        self.assertEqual(index.candidate_top_modules, ["soc_top"])
+        self.assertEqual(set(index.reachable_modules), {"soc_top", "axi_fabric", "llc_slice"})
         self.assertEqual(len(index.modules["soc_top"].instances), 2)
+
+    def test_explicit_top_limits_reachable_hierarchy(self):
+        index = build_index(Path("examples/tiny_soc"), top=["axi_fabric"])
+        self.assertEqual(index.top_modules, ["axi_fabric"])
+        self.assertEqual(index.reachable_modules, ["axi_fabric"])
+        self.assertIn("soc_top", index.orphan_modules)
 
     def test_tiny_soc_checks_run(self):
         index = build_index(Path("examples/tiny_soc"))

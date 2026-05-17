@@ -26,19 +26,32 @@ def render_design_overview(index: DesignIndex) -> str:
         f"- RTL files: {len(index.files)}",
         f"- Modules: {len(modules)}",
         f"- Instances: {instance_count}",
-        f"- Candidate top modules: {len(index.top_modules)}",
+        f"- Selected top modules: {len(index.top_modules)}",
+        f"- Candidate top modules: {len(index.candidate_top_modules)}",
+        f"- Reachable modules from selected top: {len(index.reachable_modules)}",
+        f"- Orphan/unreachable modules: {len(index.orphan_modules)}",
+        f"- Unresolved instantiated module types: {len(index.unresolved_modules)}",
         f"- Diagnostics: {len(index.diagnostics)}",
         "",
-        "## Top Module Candidates",
+        "## Selected Top Modules",
         "",
     ]
-    ranked_tops = sorted(index.top_modules, key=lambda n: len(index.modules[n].instances) if n in index.modules else 0, reverse=True)
-    for name in ranked_tops[:40]:
+    for name in _rank_modules_by_instances(index, index.top_modules)[:40]:
         source = index.modules[name].source.label() if name in index.modules else ""
         inst_count = len(index.modules[name].instances) if name in index.modules else 0
         lines.append(f"- {name} ({inst_count} instances) `{source}`")
-    if len(ranked_tops) > 40:
-        lines.append(f"- ... {len(ranked_tops) - 40} more")
+    lines.extend(["", "## Candidate Top Modules", ""])
+    for name in _rank_modules_by_instances(index, index.candidate_top_modules)[:40]:
+        module = index.modules[name]
+        lines.append(f"- {name} ({len(module.instances)} instances) `{module.source.label()}`")
+    if len(index.candidate_top_modules) > 40:
+        lines.append(f"- ... {len(index.candidate_top_modules) - 40} more")
+    if index.unresolved_modules:
+        lines.extend(["", "## Unresolved Module Types", ""])
+        for name in index.unresolved_modules[:40]:
+            lines.append(f"- {name}")
+        if len(index.unresolved_modules) > 40:
+            lines.append(f"- ... {len(index.unresolved_modules) - 40} more")
     lines.extend(["", "## Roles", ""])
     for role, count in sorted(role_counts.items(), key=lambda item: (-item[1], item[0])):
         lines.append(f"- {role}: {count}")
@@ -151,7 +164,8 @@ def render_soc_report(index: DesignIndex) -> str:
 
 def run_basic_checks(index: DesignIndex) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
-    for module in index.modules.values():
+    active_names = set(index.reachable_modules or index.modules)
+    for module in (index.modules[name] for name in sorted(active_names) if name in index.modules):
         if module.instances and not module.clocks and module.role not in {"memory_or_cache"}:
             findings.append(_finding("P2", "No clock detected", f"{module.name} contains sub-instances but no clock-like signal was detected.", module.source.label()))
         if module.instances and not module.resets and module.role not in {"clocking", "memory_or_cache"}:
@@ -186,3 +200,7 @@ def _count_by(modules: list[Module], attr: str) -> dict[str, int]:
         key = getattr(module, attr)
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _rank_modules_by_instances(index: DesignIndex, names: list[str]) -> list[str]:
+    return sorted(names, key=lambda n: len(index.modules[n].instances) if n in index.modules else 0, reverse=True)

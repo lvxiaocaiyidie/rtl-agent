@@ -79,6 +79,10 @@ class DesignIndex:
     files: list[str]
     modules: dict[str, Module]
     top_modules: list[str]
+    candidate_top_modules: list[str] = field(default_factory=list)
+    reachable_modules: list[str] = field(default_factory=list)
+    orphan_modules: list[str] = field(default_factory=list)
+    unresolved_modules: list[str] = field(default_factory=list)
     diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

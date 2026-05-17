@@ -15,6 +15,7 @@ The first version focuses on reliable navigation over low-information-density RT
 ```powershell
 python -m rtl_agent index examples/tiny_soc -o out
 python -m rtl_agent check examples/tiny_soc -o out
+python -m rtl_agent check examples/tiny_soc --top soc_top -o out
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
 python -m unittest discover -s tests -v
 ```
@@ -27,6 +28,15 @@ Artifacts:
 - `out/module_summary.md`: high-density module memory
 - `out/esl_model.yaml`: ESL-like intermediate model with source line tags
 - `out/soc_integration_report.md`: integration-oriented findings
+
+For large RTL libraries, explicitly specify the integration top when you know it:
+
+```powershell
+python -m rtl_agent check path/to/rtl --top my_soc_top -o out/my_soc
+python -m rtl_agent check path/to/rtl --top-file path/to/top.sv -o out/my_soc
+```
+
+Without `--top`, `rtl-agent` treats modules that are not instantiated by any scanned module as candidate tops. With `--top` or `--top-file`, hierarchy and integration checks are scoped to modules reachable from the selected top, while unreachable modules are reported separately as orphan candidates.
 
 ## Architecture
 
