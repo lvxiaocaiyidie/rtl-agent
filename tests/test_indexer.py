@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from rtl_agent.indexer import build_index
+from rtl_agent.llm import LLMConfig, get_api_key
 from rtl_agent.parser import _looks_like_reset
 from rtl_agent.reducer import reduced_design_dict
 from rtl_agent.reports import run_basic_checks
@@ -43,6 +45,32 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(stub_names, {"axi_fabric", "llc_slice"})
         axi_stub = next(stub for stub in reduced["interface_stubs"] if stub["name"] == "axi_fabric")
         self.assertTrue(any("m_awvalid" in port for port in axi_stub["ports"]))
+
+    def test_positional_instance_does_not_trigger_named_port_rule(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "top.sv").write_text(
+                """
+module child(input clk, input rst_n, input a, output b);
+endmodule
+
+module top(input clk, input rst_n, input a, output b);
+  child u_child(clk, rst_n, a, b);
+endmodule
+""",
+                encoding="utf-8",
+            )
+            index = build_index(root, top=["top"])
+            self.assertEqual(index.modules["top"].instances[0].connection_style, "positional")
+            findings = run_basic_checks(index)
+            self.assertFalse(any(finding.rule_id == "RTL002" for finding in findings))
+
+    def test_env_file_with_bom_is_supported(self):
+        with TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env.local"
+            env_path.write_text("\ufeffOPENAI_API_KEY=dummy-bom-key\n", encoding="utf-8")
+            config = LLMConfig(env_file=str(env_path))
+            self.assertEqual(get_api_key(config), "dummy-bom-key")
 
 
 if __name__ == "__main__":

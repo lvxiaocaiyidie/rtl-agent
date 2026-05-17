@@ -124,12 +124,14 @@ def _extract_instances(body: str, rel: str, base_line: int) -> list[Instance]:
         if mod in KEYWORDS or name in KEYWORDS:
             continue
         line = base_line + body[: match.start()].count("\n")
+        port_text = match.group("ports") or ""
         instances.append(
             Instance(
                 module=mod,
                 name=name,
                 parameters=_extract_named_map(match.group("params") or ""),
-                connections=_extract_named_map(match.group("ports") or ""),
+                connections=_extract_named_map(port_text),
+                connection_style=_connection_style(port_text),
                 source=SourceRange(rel, line, line),
             )
         )
@@ -159,6 +161,15 @@ def _extract_named_map(text: str) -> dict[str, str]:
     for match in re.finditer(r"\.([a-zA-Z_][\w$]*)\s*\(\s*([^\)]*)\)", text, re.S):
         result[match.group(1)] = " ".join(match.group(2).split())
     return result
+
+
+def _connection_style(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return "empty"
+    if re.search(r"\.[a-zA-Z_][\w$]*\s*\(", stripped):
+        return "named"
+    return "positional"
 
 
 def _split_names(text: str) -> list[str]:

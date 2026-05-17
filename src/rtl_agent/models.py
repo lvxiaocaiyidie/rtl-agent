@@ -45,6 +45,7 @@ class Instance:
     name: str
     parameters: dict[str, str] = field(default_factory=dict)
     connections: dict[str, str] = field(default_factory=dict)
+    connection_style: str = "unknown"
     source: SourceRange | None = None
 
 

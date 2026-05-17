@@ -20,6 +20,7 @@ python -m rtl_agent list-rules
 python -m rtl_agent list-reduction-rules
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
 python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
+python -m rtl_agent slice examples/tiny_soc --module soc_top --instance u_fabric
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
 python -m unittest discover -s tests -v
 ```
@@ -35,6 +36,7 @@ Artifacts:
 - `out/reduced_context.json`: machine-readable reduced RTL context
 - `out/reduction_rules.md`: explicit reduction policy
 - `out/soc_integration_report.md`: integration-oriented findings
+- `out/llm_review.md`: optional concise model review when `--llm` is enabled
 
 For large RTL libraries, explicitly specify the integration top when you know it:
 
@@ -80,6 +82,25 @@ python -m rtl_agent check path/to/rtl --top my_soc_top --llm -o out/my_soc
 ```
 
 The model output is written to `out/my_soc/llm_review.md`. The API key file is ignored by git.
+
+LLM token usage is controlled by preprocessing budgets rather than by dropping traceability:
+
+```powershell
+python -m rtl_agent check path/to/rtl --top my_soc_top --llm `
+  --llm-max-modules 40 `
+  --llm-max-interface-stubs 160 `
+  --llm-max-findings 40 `
+  --report-style brief `
+  -o out/my_soc
+```
+
+If a model or future agent is uncertain, fetch original RTL only for the referenced area:
+
+```powershell
+python -m rtl_agent slice path/to/rtl --module plic_top --instance x_plic_sec_busif --context-lines 30
+```
+
+The LLM review path is intentionally backend-shaped: `LLMIntegrationReviewRule` consumes a small `ReviewBackend` interface, so an OpenAI-compatible chat client, Claude Code-style agent, or internal multi-turn reviewer can be swapped behind the same reduced-context and script-finding evidence.
 
 ## RTL Reduction
 

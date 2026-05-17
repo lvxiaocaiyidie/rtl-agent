@@ -1,4 +1,4 @@
 [llm]
-base_url = "https://api.openai.com/v1"
+base_url = "https://api.deepseek.com"
 api_key_env = "OPENAI_API_KEY"
-model = "gpt-4.1"
+model = "deepseek-v4-pro"

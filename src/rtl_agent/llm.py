@@ -68,8 +68,8 @@ def has_api_key(config: LLMConfig) -> bool:
 
 def _read_env_value(path: Path, name: str) -> str | None:
     pattern = re.compile(rf"^\s*{re.escape(name)}\s*=\s*(.*)\s*$")
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        match = pattern.match(line)
+    for line in path.read_text(encoding="utf-8-sig", errors="ignore").splitlines():
+        match = pattern.match(line.lstrip("\ufeff"))
         if not match:
             continue
         value = match.group(1).strip().strip('"').strip("'")

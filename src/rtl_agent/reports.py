@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import json
 from pathlib import Path
 
@@ -149,31 +150,72 @@ def render_esl_model(index: DesignIndex) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_soc_report(index: DesignIndex, rule_ids: list[str] | None = None, include_orphan: bool = False) -> str:
+def render_soc_report(
+    index: DesignIndex,
+    rule_ids: list[str] | None = None,
+    include_orphan: bool = False,
+    style: str = "brief",
+    max_per_rule: int = 12,
+) -> str:
     findings = run_basic_checks(index, rule_ids=rule_ids, include_orphan=include_orphan)
     lines = ["# SOC Integration Report", ""]
     if not findings:
         lines.append("No basic integration findings were detected by the MVP rule set.")
-    for idx, finding in enumerate(findings, 1):
-        lines.extend(
-            [
-                f"## {idx}. [{finding.severity}] {finding.rule_id}: {finding.title}",
-                "",
-                finding.message,
-                "",
-                f"Source: `{finding.source}`",
-                "",
-            ]
-        )
-        if finding.evidence:
-            lines.append("Evidence:")
-            lines.extend(f"- `{item}`" for item in finding.evidence)
-            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+    lines.extend(_finding_summary_lines(findings))
+    lines.append("")
+    by_rule: dict[str, list[Finding]] = defaultdict(list)
+    for finding in findings:
+        by_rule[finding.rule_id].append(finding)
+    for rule_id in sorted(by_rule):
+        group = by_rule[rule_id]
+        first = group[0]
+        lines.extend([f"## {rule_id}: {first.title} ({len(group)})", ""])
+        shown = group if style == "full" else group[:max_per_rule]
+        for idx, finding in enumerate(shown, 1):
+            lines.extend(_finding_lines(finding, idx, compact=style != "full"))
+        omitted = len(group) - len(shown)
+        if omitted > 0:
+            lines.extend([f"... {omitted} more {rule_id} findings omitted by report budget.", ""])
     return "\n".join(lines).rstrip() + "\n"
 
 
 def run_basic_checks(index: DesignIndex, rule_ids: list[str] | None = None, include_orphan: bool = False) -> list[Finding]:
     return run_checks(index, rule_ids=rule_ids, include_orphan=include_orphan)
+
+
+def _finding_summary_lines(findings: list[Finding]) -> list[str]:
+    by_rule: dict[str, list[Finding]] = defaultdict(list)
+    for finding in findings:
+        by_rule[finding.rule_id].append(finding)
+    lines = [f"Total findings: {len(findings)}", "", "## Summary", ""]
+    for rule_id in sorted(by_rule):
+        first = by_rule[rule_id][0]
+        lines.append(f"- [{first.severity}] {rule_id}: {first.title} - {len(by_rule[rule_id])}")
+    return lines
+
+
+def _finding_lines(finding: Finding, idx: int, compact: bool = True) -> list[str]:
+    if compact:
+        evidence = f" Evidence: `{'; '.join(finding.evidence)}`." if finding.evidence else ""
+        return [
+            f"{idx}. {finding.message}",
+            f"   Source: `{finding.source}`.{evidence}",
+            "",
+        ]
+    lines = [
+        f"### {idx}. [{finding.severity}] {finding.rule_id}: {finding.title}",
+        "",
+        finding.message,
+        "",
+        f"Source: `{finding.source}`",
+        "",
+    ]
+    if finding.evidence:
+        lines.append("Evidence:")
+        lines.extend(f"- `{item}`" for item in finding.evidence)
+        lines.append("")
+    return lines
 
 
 def _dir_count(module: Module, direction: str) -> int:

@@ -28,11 +28,14 @@ def main(argv: list[str] | None = None) -> int:
     check_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
     check_p.add_argument("--rule", action="append", default=[], help="Run only one rule ID or category. Can be repeated.")
     check_p.add_argument("--include-orphans", action="store_true", help="Report unreachable modules as findings.")
+    check_p.add_argument("--report-style", choices=["brief", "full"], default="brief", help="Control SOC report verbosity.")
+    check_p.add_argument("--max-findings-per-rule", type=int, default=12, help="Brief report sample budget per rule.")
     check_p.add_argument("--llm", action="store_true", help="Run optional OpenAI-compatible LLM review over reduced context.")
     check_p.add_argument("--llm-config", default="rtl-agent.toml", help="Path to LLM config file.")
     check_p.add_argument("--env-file", default=".env.local", help="Path to env file containing the API key.")
     check_p.add_argument("--llm-max-modules", type=int, default=80)
     check_p.add_argument("--llm-max-interface-stubs", type=int, default=120)
+    check_p.add_argument("--llm-max-findings", type=int, default=40, help="Script finding budget passed to the LLM.")
 
     ask_p = sub.add_parser("ask", help="Answer with local structured memory. LLM wiring is reserved for the next phase.")
     ask_p.add_argument("rtl_root")
@@ -47,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     reduce_p.add_argument("--format", choices=["md", "json"], default="md")
     reduce_p.add_argument("--max-modules", type=int, default=120)
     reduce_p.add_argument("--max-interface-stubs", type=int, default=200)
+
+    slice_p = sub.add_parser("slice", help="Print original RTL around a module or instance for multi-turn review.")
+    slice_p.add_argument("rtl_root")
+    slice_p.add_argument("--module", required=True, help="Module name to inspect.")
+    slice_p.add_argument("--instance", help="Optional instance name inside the module.")
+    slice_p.add_argument("--context-lines", type=int, default=20, help="Extra lines around an instance source line.")
 
     sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
     sub.add_parser("list-reduction-rules", help="List RTL reduction rules used for model-facing context.")
@@ -69,7 +78,13 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.out)
         write_artifacts(index, out)
         (out / "soc_integration_report.md").write_text(
-            render_soc_report(index, rule_ids=args.rule, include_orphan=args.include_orphans),
+            render_soc_report(
+                index,
+                rule_ids=args.rule,
+                include_orphan=args.include_orphans,
+                style=args.report_style,
+                max_per_rule=args.max_findings_per_rule,
+            ),
             encoding="utf-8",
         )
         if args.llm:
@@ -88,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
             print(render_reduced_json(index, max_modules=args.max_modules, max_interface_stubs=args.max_interface_stubs))
         else:
             print(render_llm_context(index, max_modules=args.max_modules, max_interface_stubs=args.max_interface_stubs))
+        return 0
+    if args.cmd == "slice":
+        index = build_index(root)
+        print(_source_slice(index, root.resolve(), args.module, args.instance, args.context_lines))
         return 0
     return 1
 
@@ -134,12 +153,40 @@ def _run_llm_review(index, args) -> str:
         client=client,
         max_modules=args.llm_max_modules,
         max_interface_stubs=args.llm_max_interface_stubs,
+        max_findings=args.llm_max_findings,
     )
     findings = rule.run(index)
     lines = ["# LLM Review", ""]
     for finding in findings:
         lines.extend([finding.message, ""])
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _source_slice(index, root: Path, module_name: str, instance_name: str | None = None, context_lines: int = 20) -> str:
+    module = index.modules.get(module_name)
+    if not module:
+        return f"Module {module_name} was not found."
+    source = module.source
+    title = f"# RTL Slice: {module_name}"
+    if instance_name:
+        inst = next((item for item in module.instances if item.name == instance_name), None)
+        if not inst or not inst.source:
+            return f"Instance {module_name}.{instance_name} was not found."
+        source = inst.source
+        title = f"# RTL Slice: {module_name}.{instance_name}"
+        start_line = max(module.source.start_line, source.start_line - context_lines)
+        end_line = min(module.source.end_line, source.end_line + context_lines)
+    else:
+        start_line = source.start_line
+        end_line = source.end_line
+    path = root / source.file
+    if not path.exists():
+        return f"Source file {source.file} was not found."
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    body = []
+    for line_no in range(start_line, min(end_line, len(lines)) + 1):
+        body.append(f"{line_no:6d}: {lines[line_no - 1]}")
+    return title + f"\nSource: {source.file}:{start_line}-{end_line}\n\n" + "\n".join(body)
 
 
 if __name__ == "__main__":
