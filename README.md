@@ -16,6 +16,8 @@ The first version focuses on reliable navigation over low-information-density RT
 python -m rtl_agent index examples/tiny_soc -o out
 python -m rtl_agent check examples/tiny_soc -o out
 python -m rtl_agent check examples/tiny_soc --top soc_top -o out
+python -m rtl_agent list-rules
+python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
 python -m unittest discover -s tests -v
 ```
@@ -37,6 +39,42 @@ python -m rtl_agent check path/to/rtl --top-file path/to/top.sv -o out/my_soc
 ```
 
 Without `--top`, `rtl-agent` treats modules that are not instantiated by any scanned module as candidate tops. With `--top` or `--top-file`, hierarchy and integration checks are scoped to modules reachable from the selected top, while unreachable modules are reported separately as orphan candidates.
+
+## Rule-Based Checks
+
+Checks are script-first and reproducible. List the active rules with:
+
+```powershell
+python -m rtl_agent list-rules
+```
+
+Initial rule set:
+
+- `RTL001` unknown instantiated module type
+- `RTL002` named instance connection missing declared target ports
+- `RTL003` container module has no detected clock
+- `RTL004` container module has no detected reset
+- `RTL005` module is unreachable from the selected top, opt-in via `--include-orphans`
+
+Run a subset by ID or category:
+
+```powershell
+python -m rtl_agent check path/to/rtl --top my_soc_top --rule RTL001 -o out/hierarchy_only
+python -m rtl_agent check path/to/rtl --top my_soc_top --rule hierarchy -o out/hierarchy_only
+```
+
+The current checks do not depend on an LLM. An optional OpenAI-compatible review rule is reserved for later stages, where the model should consume reduced context and explain or generalize script findings rather than replace structural extraction.
+
+## RTL Reduction
+
+Large RTL trees are reduced before any model-facing workflow. The reducer emits high-density context containing selected tops, reachable/orphan counts, unresolved module types, module roles, ports, clocks/resets, and instance edges with source line labels:
+
+```powershell
+python -m rtl_agent reduce path/to/rtl --top my_soc_top --format md --max-modules 120
+python -m rtl_agent reduce path/to/rtl --top my_soc_top --format json --max-modules 120
+```
+
+The generated `reduced_context.md` and `reduced_context.json` are intended as the first prompt input for LLM analysis. The original RTL remains available through file and line references when detailed inspection is needed.
 
 ## Architecture
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .checks import render_rule_list
 from .indexer import build_index
+from .reducer import render_llm_context, render_reduced_json
 from .reports import render_module_summary, render_soc_report, write_artifacts
 
 
@@ -22,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
     check_p.add_argument("-o", "--out", default="out")
     check_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
     check_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
+    check_p.add_argument("--rule", action="append", default=[], help="Run only one rule ID or category. Can be repeated.")
+    check_p.add_argument("--include-orphans", action="store_true", help="Report unreachable modules as findings.")
 
     ask_p = sub.add_parser("ask", help="Answer with local structured memory. LLM wiring is reserved for the next phase.")
     ask_p.add_argument("rtl_root")
@@ -29,7 +33,19 @@ def main(argv: list[str] | None = None) -> int:
     ask_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
     ask_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
 
+    reduce_p = sub.add_parser("reduce", help="Emit reduced high-density RTL context for LLM review.")
+    reduce_p.add_argument("rtl_root")
+    reduce_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
+    reduce_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
+    reduce_p.add_argument("--format", choices=["md", "json"], default="md")
+    reduce_p.add_argument("--max-modules", type=int, default=120)
+
+    sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
+
     args = parser.parse_args(argv)
+    if args.cmd == "list-rules":
+        print(render_rule_list())
+        return 0
     root = Path(args.rtl_root)
     if args.cmd == "index":
         index = _build_index_from_args(root, args)
@@ -40,13 +56,23 @@ def main(argv: list[str] | None = None) -> int:
         index = _build_index_from_args(root, args)
         out = Path(args.out)
         write_artifacts(index, out)
-        (out / "soc_integration_report.md").write_text(render_soc_report(index), encoding="utf-8")
+        (out / "soc_integration_report.md").write_text(
+            render_soc_report(index, rule_ids=args.rule, include_orphan=args.include_orphans),
+            encoding="utf-8",
+        )
         print(f"Wrote SOC integration report to {out / 'soc_integration_report.md'}")
         return 0
     if args.cmd == "ask":
         index = _build_index_from_args(root, args)
         question = args.question.lower()
         print(_local_answer(index, question))
+        return 0
+    if args.cmd == "reduce":
+        index = _build_index_from_args(root, args)
+        if args.format == "json":
+            print(render_reduced_json(index, max_modules=args.max_modules))
+        else:
+            print(render_llm_context(index, max_modules=args.max_modules))
         return 0
     return 1
 

@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .checks import run_checks
+from .checks.base import Finding
 from .models import DesignIndex, Module
+from .reducer import render_llm_context, render_reduced_json
 
 
 def write_artifacts(index: DesignIndex, out_dir: Path) -> None:
@@ -13,6 +16,8 @@ def write_artifacts(index: DesignIndex, out_dir: Path) -> None:
     (out_dir / "hierarchy.md").write_text(render_hierarchy(index), encoding="utf-8")
     (out_dir / "module_summary.md").write_text(render_module_summary(index), encoding="utf-8")
     (out_dir / "esl_model.yaml").write_text(render_esl_model(index), encoding="utf-8")
+    (out_dir / "reduced_context.md").write_text(render_llm_context(index), encoding="utf-8")
+    (out_dir / "reduced_context.json").write_text(render_reduced_json(index), encoding="utf-8")
 
 
 def render_design_overview(index: DesignIndex) -> str:
@@ -143,43 +148,31 @@ def render_esl_model(index: DesignIndex) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_soc_report(index: DesignIndex) -> str:
-    findings = run_basic_checks(index)
+def render_soc_report(index: DesignIndex, rule_ids: list[str] | None = None, include_orphan: bool = False) -> str:
+    findings = run_basic_checks(index, rule_ids=rule_ids, include_orphan=include_orphan)
     lines = ["# SOC Integration Report", ""]
     if not findings:
         lines.append("No basic integration findings were detected by the MVP rule set.")
     for idx, finding in enumerate(findings, 1):
         lines.extend(
             [
-                f"## {idx}. [{finding['severity']}] {finding['title']}",
+                f"## {idx}. [{finding.severity}] {finding.rule_id}: {finding.title}",
                 "",
-                finding["message"],
+                finding.message,
                 "",
-                f"Source: `{finding['source']}`",
+                f"Source: `{finding.source}`",
                 "",
             ]
         )
+        if finding.evidence:
+            lines.append("Evidence:")
+            lines.extend(f"- `{item}`" for item in finding.evidence)
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def run_basic_checks(index: DesignIndex) -> list[dict[str, str]]:
-    findings: list[dict[str, str]] = []
-    active_names = set(index.reachable_modules or index.modules)
-    for module in (index.modules[name] for name in sorted(active_names) if name in index.modules):
-        if module.instances and not module.clocks and module.role not in {"memory_or_cache"}:
-            findings.append(_finding("P2", "No clock detected", f"{module.name} contains sub-instances but no clock-like signal was detected.", module.source.label()))
-        if module.instances and not module.resets and module.role not in {"clocking", "memory_or_cache"}:
-            findings.append(_finding("P3", "No reset detected", f"{module.name} contains sub-instances but no reset-like signal was detected.", module.source.label()))
-        for inst in module.instances:
-            target = index.modules.get(inst.module)
-            if not target:
-                findings.append(_finding("P2", "Unknown instance module", f"{module.name}.{inst.name} instantiates {inst.module}, but that module was not found in scanned RTL.", inst.source.label() if inst.source else module.source.label()))
-                continue
-            required_ports = [p for p in target.ports if p.direction in {"input", "output", "inout"}]
-            missing = [p.name for p in required_ports if p.name not in inst.connections]
-            if missing:
-                findings.append(_finding("P1", "Instance port appears unconnected", f"{module.name}.{inst.name} is missing named connections for: {', '.join(missing)}.", inst.source.label() if inst.source else module.source.label()))
-    return findings
+def run_basic_checks(index: DesignIndex, rule_ids: list[str] | None = None, include_orphan: bool = False) -> list[Finding]:
+    return run_checks(index, rule_ids=rule_ids, include_orphan=include_orphan)
 
 
 def _dir_count(module: Module, direction: str) -> int:
@@ -188,10 +181,6 @@ def _dir_count(module: Module, direction: str) -> int:
 
 def _infer_role(module: Module) -> str:
     return module.role
-
-
-def _finding(severity: str, title: str, message: str, source: str) -> dict[str, str]:
-    return {"severity": severity, "title": title, "message": message, "source": source}
 
 
 def _count_by(modules: list[Module], attr: str) -> dict[str, int]:
