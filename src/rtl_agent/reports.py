@@ -6,7 +6,7 @@ from pathlib import Path
 from .checks import run_checks
 from .checks.base import Finding
 from .models import DesignIndex, Module
-from .reducer import render_llm_context, render_reduced_json
+from .reducer import render_llm_context, render_reduced_json, render_reduction_rules
 
 
 def write_artifacts(index: DesignIndex, out_dir: Path) -> None:
@@ -18,6 +18,7 @@ def write_artifacts(index: DesignIndex, out_dir: Path) -> None:
     (out_dir / "esl_model.yaml").write_text(render_esl_model(index), encoding="utf-8")
     (out_dir / "reduced_context.md").write_text(render_llm_context(index), encoding="utf-8")
     (out_dir / "reduced_context.json").write_text(render_reduced_json(index), encoding="utf-8")
+    (out_dir / "reduction_rules.md").write_text(render_reduction_rules(), encoding="utf-8")
 
 
 def render_design_overview(index: DesignIndex) -> str:

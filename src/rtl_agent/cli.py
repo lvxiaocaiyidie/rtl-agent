@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .checks import render_rule_list
 from .indexer import build_index
-from .reducer import render_llm_context, render_reduced_json
+from .reducer import render_llm_context, render_reduced_json, render_reduction_rules
 from .reports import render_module_summary, render_soc_report, write_artifacts
 
 
@@ -39,12 +39,17 @@ def main(argv: list[str] | None = None) -> int:
     reduce_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
     reduce_p.add_argument("--format", choices=["md", "json"], default="md")
     reduce_p.add_argument("--max-modules", type=int, default=120)
+    reduce_p.add_argument("--max-interface-stubs", type=int, default=200)
 
     sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
+    sub.add_parser("list-reduction-rules", help="List RTL reduction rules used for model-facing context.")
 
     args = parser.parse_args(argv)
     if args.cmd == "list-rules":
         print(render_rule_list())
+        return 0
+    if args.cmd == "list-reduction-rules":
+        print(render_reduction_rules())
         return 0
     root = Path(args.rtl_root)
     if args.cmd == "index":
@@ -70,9 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "reduce":
         index = _build_index_from_args(root, args)
         if args.format == "json":
-            print(render_reduced_json(index, max_modules=args.max_modules))
+            print(render_reduced_json(index, max_modules=args.max_modules, max_interface_stubs=args.max_interface_stubs))
         else:
-            print(render_llm_context(index, max_modules=args.max_modules))
+            print(render_llm_context(index, max_modules=args.max_modules, max_interface_stubs=args.max_interface_stubs))
         return 0
     return 1
 

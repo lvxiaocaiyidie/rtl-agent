@@ -3,6 +3,7 @@ from pathlib import Path
 
 from rtl_agent.indexer import build_index
 from rtl_agent.parser import _looks_like_reset
+from rtl_agent.reducer import reduced_design_dict
 from rtl_agent.reports import run_basic_checks
 
 
@@ -33,6 +34,15 @@ class IndexerTests(unittest.TestCase):
         self.assertTrue(_looks_like_reset("rst_n"))
         self.assertFalse(_looks_like_reset("hburst"))
         self.assertFalse(_looks_like_reset("awburst_s1"))
+
+    def test_reducer_keeps_interface_stubs_for_omitted_modules(self):
+        index = build_index(Path("examples/tiny_soc"), top=["soc_top"])
+        reduced = reduced_design_dict(index, max_modules=1, max_interface_stubs=4)
+        self.assertEqual([module["name"] for module in reduced["modules"]], ["soc_top"])
+        stub_names = {stub["name"] for stub in reduced["interface_stubs"]}
+        self.assertEqual(stub_names, {"axi_fabric", "llc_slice"})
+        axi_stub = next(stub for stub in reduced["interface_stubs"] if stub["name"] == "axi_fabric")
+        self.assertTrue(any("m_awvalid" in port for port in axi_stub["ports"]))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ KEYWORDS = {
     "assign", "always", "always_comb", "always_ff", "always_latch", "and", "begin",
     "case", "default", "else", "end", "endcase", "endgenerate", "endmodule",
     "for", "generate", "if", "initial", "input", "inout", "interface", "logic",
-    "module", "not", "or", "output", "parameter", "reg", "wire",
+    "genvar", "integer", "module", "not", "or", "output", "parameter", "reg", "wire",
 }
 
 

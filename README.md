@@ -17,6 +17,7 @@ python -m rtl_agent index examples/tiny_soc -o out
 python -m rtl_agent check examples/tiny_soc -o out
 python -m rtl_agent check examples/tiny_soc --top soc_top -o out
 python -m rtl_agent list-rules
+python -m rtl_agent list-reduction-rules
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
 python -m unittest discover -s tests -v
@@ -29,6 +30,9 @@ Artifacts:
 - `out/hierarchy.md`: module hierarchy
 - `out/module_summary.md`: high-density module memory
 - `out/esl_model.yaml`: ESL-like intermediate model with source line tags
+- `out/reduced_context.md`: LLM-facing reduced RTL context
+- `out/reduced_context.json`: machine-readable reduced RTL context
+- `out/reduction_rules.md`: explicit reduction policy
 - `out/soc_integration_report.md`: integration-oriented findings
 
 For large RTL libraries, explicitly specify the integration top when you know it:
@@ -67,14 +71,24 @@ The current checks do not depend on an LLM. An optional OpenAI-compatible review
 
 ## RTL Reduction
 
-Large RTL trees are reduced before any model-facing workflow. The reducer emits high-density context containing selected tops, reachable/orphan counts, unresolved module types, module roles, ports, clocks/resets, and instance edges with source line labels:
+Large RTL trees are reduced before any model-facing workflow. List the active reduction rules with:
+
+```powershell
+python -m rtl_agent list-reduction-rules
+```
+
+The reducer emits high-density context containing selected tops, reachable/orphan counts, unresolved module types, module roles, ports, clocks/resets, and instance edges with source line labels:
 
 ```powershell
 python -m rtl_agent reduce path/to/rtl --top my_soc_top --format md --max-modules 120
 python -m rtl_agent reduce path/to/rtl --top my_soc_top --format json --max-modules 120
 ```
 
+To avoid over-compressing away interfaces, omitted reachable modules are retained as interface stubs. A full module summary keeps ports, parameters, clocks, resets, instance edges, role, subsystem, and source lines. An interface stub keeps source, role, subsystem, full parsed port signatures, clocks, resets, parameters, and instance count. Use `--max-interface-stubs` to tune that second budget.
+
 The generated `reduced_context.md` and `reduced_context.json` are intended as the first prompt input for LLM analysis. The original RTL remains available through file and line references when detailed inspection is needed.
+
+For projects using Emacs verilog-mode AUTOINST/AUTOWIRE/AUTO_TEMPLATE flows, run `rtl-agent` on the expanded or generated RTL whenever possible. The current lightweight parser reads concrete module instances and named connections present in the scanned files; it does not yet execute verilog-mode expansion itself.
 
 ## Architecture
 
