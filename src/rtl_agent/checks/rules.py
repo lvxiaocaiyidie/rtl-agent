@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rtl_agent.models import DesignIndex
+from rtl_agent.parser import _looks_like_clock, _looks_like_reset
 
 from .base import Finding, ScriptRule
 
@@ -168,3 +169,92 @@ class OrphanModuleRule(ScriptRule):
                 )
             )
         return findings
+
+
+class CriticalClockResetConnectionRule(ScriptRule):
+    rule_id = "RTL006"
+    title = "Critical clock/reset connection is open or constant"
+    severity = "P1"
+    category = "semantic"
+    description = "A named child clock/reset port is explicitly left open or tied to a constant, which may compile but is usually an integration bug."
+
+    def run(self, index: DesignIndex) -> list[Finding]:
+        findings: list[Finding] = []
+        for module in self.active_modules(index):
+            for inst in module.instances:
+                if inst.connection_style != "named":
+                    continue
+                target = index.modules.get(inst.module)
+                if not target:
+                    continue
+                for port in target.ports:
+                    if not (_looks_like_clock(port.name) or _looks_like_reset(port.name)):
+                        continue
+                    if port.name not in inst.connections:
+                        continue
+                    expr = inst.connections[port.name].strip()
+                    if expr == "" or _is_constant_expr(expr):
+                        findings.append(
+                            Finding(
+                                rule_id=self.rule_id,
+                                severity=self.severity,
+                                title=self.title,
+                                message=f"{module.name}.{inst.name} connects critical port {port.name} to `{expr or 'open'}`.",
+                                source=inst.source.label() if inst.source else module.source.label(),
+                                module=module.name,
+                                evidence=[f"target={target.name}", f"port={port.name}", f"expr={expr or 'open'}"],
+                            )
+                        )
+        return findings
+
+
+class MultiClockDomainRule(ScriptRule):
+    rule_id = "RTL007"
+    title = "Module spans multiple clock domains"
+    severity = "P3"
+    category = "semantic"
+    description = "A non-trivial module has multiple detected clocks; VCS can compile it, but CDC intent still needs review."
+
+    def run(self, index: DesignIndex) -> list[Finding]:
+        findings: list[Finding] = []
+        focus_modules = _top_neighborhood(index, depth=2)
+        for module in self.active_modules(index):
+            if focus_modules and module.name not in focus_modules:
+                continue
+            if len(module.clocks) < 2:
+                continue
+            if not module.instances and not module.procedural_blocks:
+                continue
+            findings.append(
+                Finding(
+                    rule_id=self.rule_id,
+                    severity=self.severity,
+                    title=self.title,
+                    message=f"{module.name} has multiple detected clocks: {', '.join(module.clocks[:8])}.",
+                    source=module.source.label(),
+                    module=module.name,
+                    evidence=[f"clock_count={len(module.clocks)}"],
+                )
+            )
+        return findings
+
+
+def _is_constant_expr(expr: str) -> bool:
+    compact = expr.replace("_", "").replace(" ", "").lower()
+    return compact in {"0", "1", "1'b0", "1'b1", "1'bx", "1'bz", "1'h0", "1'h1"}
+
+
+def _top_neighborhood(index: DesignIndex, depth: int = 2) -> set[str]:
+    if not index.top_modules:
+        return set()
+    focus: set[str] = set()
+    frontier = set(index.top_modules)
+    for _ in range(depth + 1):
+        next_frontier: set[str] = set()
+        for name in frontier:
+            if name in focus or name not in index.modules:
+                continue
+            focus.add(name)
+            next_frontier.update(inst.module for inst in index.modules[name].instances if inst.module in index.modules)
+        frontier = next_frontier
+    return focus

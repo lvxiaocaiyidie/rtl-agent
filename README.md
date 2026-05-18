@@ -18,7 +18,9 @@ python -m rtl_agent check examples/tiny_soc -o out
 python -m rtl_agent check examples/tiny_soc --top soc_top -o out
 python -m rtl_agent list-rules
 python -m rtl_agent list-reduction-rules
+python -m rtl_agent list-model-levels
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
+python -m rtl_agent model examples/tiny_soc --top soc_top --level l2 -o out
 python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
 python -m rtl_agent slice examples/tiny_soc --module soc_top --instance u_fabric
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
@@ -32,6 +34,7 @@ Artifacts:
 - `out/hierarchy.md`: module hierarchy
 - `out/module_summary.md`: high-density module memory
 - `out/esl_model.yaml`: ESL-like intermediate model with source line tags
+- `out/rtl_model_l1.yaml`: layered RTL model for script, LLM, or agent workflows
 - `out/reduced_context.md`: LLM-facing reduced RTL context
 - `out/reduced_context.json`: machine-readable reduced RTL context
 - `out/reduction_rules.md`: explicit reduction policy
@@ -62,6 +65,8 @@ Initial rule set:
 - `RTL003` container module has no detected clock
 - `RTL004` container module has no detected reset
 - `RTL005` module is unreachable from the selected top, opt-in via `--include-orphans`
+- `RTL006` named child clock/reset port is explicitly open or tied to a constant
+- `RTL007` non-trivial module spans multiple detected clock domains
 
 Run a subset by ID or category:
 
@@ -120,6 +125,25 @@ python -m rtl_agent reduce path/to/rtl --top my_soc_top --format json --max-modu
 To avoid over-compressing away interfaces, omitted reachable modules are retained as interface stubs. A full module summary keeps ports, parameters, clocks, resets, instance edges, role, subsystem, and source lines. An interface stub keeps source, role, subsystem, full parsed port signatures, clocks, resets, parameters, and instance count. Use `--max-interface-stubs` to tune that second budget.
 
 The generated `reduced_context.md` and `reduced_context.json` are intended as the first prompt input for LLM analysis. The original RTL remains available through file and line references when detailed inspection is needed.
+
+## Layered RTL Modeling
+
+Use `model` when you want a higher-density representation than RTL, but more structure than a prose summary:
+
+```powershell
+python -m rtl_agent list-model-levels
+python -m rtl_agent model path/to/rtl --top my_soc_top --level l0 -o out/my_soc
+python -m rtl_agent model path/to/rtl --top my_soc_top --level l1 --format yaml -o out/my_soc
+python -m rtl_agent model path/to/rtl --top my_soc_top --level l2 --format json -o out/my_soc
+```
+
+Model levels are intentionally layered:
+
+- `l0`: design inventory, tops, unresolved modules, subsystem and role counts.
+- `l1`: structural component model with interfaces, clock/reset domains, and instance edges.
+- `l2`: integration-intent model with protocol hints, behavior hints, clock-domain summaries, and source-slice queries for multi-turn agent review.
+
+The current modeler is script-first. Later LLM or agent passes should annotate this model rather than replace it, so facts remain traceable back to RTL line ranges.
 
 For projects using Emacs verilog-mode AUTOINST/AUTOWIRE/AUTO_TEMPLATE flows, run `rtl-agent` on the expanded or generated RTL whenever possible. The current lightweight parser reads concrete module instances and named connections present in the scanned files; it does not yet execute verilog-mode expansion itself.
 

@@ -10,7 +10,14 @@ KEYWORDS = {
     "assign", "always", "always_comb", "always_ff", "always_latch", "and", "begin",
     "case", "default", "else", "end", "endcase", "endgenerate", "endmodule",
     "for", "generate", "if", "initial", "input", "inout", "interface", "logic",
-    "genvar", "integer", "module", "not", "or", "output", "parameter", "reg", "wire",
+    "assert", "assume", "cover", "genvar", "integer", "module", "not", "or",
+    "output", "parameter", "property", "reg", "restrict", "wire",
+}
+PRIMITIVES = {
+    "and", "buf", "bufif0", "bufif1", "cmos", "nand", "nmos", "nor", "not",
+    "notif0", "notif1", "or", "pmos", "pullup", "pulldown", "rcmos", "rnmos",
+    "rpmos", "rtran", "rtranif0", "rtranif1", "tran", "tranif0", "tranif1",
+    "xnor", "xor",
 }
 
 
@@ -121,7 +128,7 @@ def _extract_instances(body: str, rel: str, base_line: int) -> list[Instance]:
     )
     for match in inst_re.finditer(body):
         mod, name = match.group(1), match.group(3)
-        if mod in KEYWORDS or name in KEYWORDS:
+        if mod in KEYWORDS or mod in PRIMITIVES or name in KEYWORDS:
             continue
         line = base_line + body[: match.start()].count("\n")
         port_text = match.group("ports") or ""
@@ -206,7 +213,18 @@ def _detect_names(module: Module, needles: tuple[str, ...]) -> list[str]:
 
 def _looks_like_clock(name: str) -> bool:
     low = name.lower()
-    if low in {"clk", "clock", "aclk", "hclk", "pclk", "cpuclk"}:
+    if (
+        low.endswith("_clk_en")
+        or low.endswith("clk_en")
+        or low.endswith("_clock_en")
+        or low.endswith("clock_en")
+        or low.endswith("_gateclk_en")
+        or low.endswith("gateclk_en")
+        or low.endswith("_for_gateclk")
+        or low.endswith("_for_clk")
+    ):
+        return False
+    if low in {"clk", "clock", "aclk", "hclk", "pclk", "cpuclk", "sck", "tck"}:
         return True
     return (
         low.endswith("_clk")

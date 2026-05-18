@@ -7,6 +7,7 @@ from .checks import render_rule_list
 from .checks.llm_rules import LLMIntegrationReviewRule
 from .indexer import build_index
 from .llm import OpenAICompatibleClient, has_api_key, load_llm_config
+from .modeler import render_model_json, render_model_levels, render_model_yaml
 from .reducer import render_llm_context, render_reduced_json, render_reduction_rules
 from .reports import render_module_summary, render_soc_report, write_artifacts
 
@@ -57,8 +58,18 @@ def main(argv: list[str] | None = None) -> int:
     slice_p.add_argument("--instance", help="Optional instance name inside the module.")
     slice_p.add_argument("--context-lines", type=int, default=20, help="Extra lines around an instance source line.")
 
+    model_p = sub.add_parser("model", help="Emit layered RTL model for script or agent workflows.")
+    model_p.add_argument("rtl_root")
+    model_p.add_argument("-o", "--out", default="out")
+    model_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
+    model_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
+    model_p.add_argument("--level", choices=["l0", "l1", "l2"], default="l1", help="Model abstraction level.")
+    model_p.add_argument("--format", choices=["yaml", "json"], default="yaml")
+    model_p.add_argument("--max-modules", type=int, default=200)
+
     sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
     sub.add_parser("list-reduction-rules", help="List RTL reduction rules used for model-facing context.")
+    sub.add_parser("list-model-levels", help="List layered RTL modeling levels.")
 
     args = parser.parse_args(argv)
     if args.cmd == "list-rules":
@@ -66,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "list-reduction-rules":
         print(render_reduction_rules())
+        return 0
+    if args.cmd == "list-model-levels":
+        print(render_model_levels())
         return 0
     root = Path(args.rtl_root)
     if args.cmd == "index":
@@ -107,6 +121,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "slice":
         index = build_index(root)
         print(_source_slice(index, root.resolve(), args.module, args.instance, args.context_lines))
+        return 0
+    if args.cmd == "model":
+        index = _build_index_from_args(root, args)
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        text = (
+            render_model_json(index, level=args.level, max_modules=args.max_modules)
+            if args.format == "json"
+            else render_model_yaml(index, level=args.level, max_modules=args.max_modules)
+        )
+        suffix = "json" if args.format == "json" else "yaml"
+        path = out / f"rtl_model_{args.level}.{suffix}"
+        path.write_text(text, encoding="utf-8")
+        print(f"Wrote RTL model to {path}")
         return 0
     return 1
 

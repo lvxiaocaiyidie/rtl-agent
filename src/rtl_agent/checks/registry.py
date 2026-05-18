@@ -6,9 +6,11 @@ from rtl_agent.models import DesignIndex
 
 from .base import CheckRule, Finding
 from .rules import (
+    CriticalClockResetConnectionRule,
     MissingClockOnContainerRule,
     MissingNamedPortRule,
     MissingResetOnContainerRule,
+    MultiClockDomainRule,
     OrphanModuleRule,
     UnknownInstanceModuleRule,
 )
@@ -19,6 +21,8 @@ CHECK_RULES: list[CheckRule] = [
     MissingClockOnContainerRule(),
     MissingResetOnContainerRule(),
     OrphanModuleRule(),
+    CriticalClockResetConnectionRule(),
+    MultiClockDomainRule(),
 ]
 
 
@@ -51,15 +55,42 @@ def render_findings_digest(findings: list[Finding], limit: int = 40) -> str:
         lines.append(f"- {rule_id} [{first.severity}] {first.title}: {len(by_rule[rule_id])}")
     lines.append("")
     lines.append("Representative findings:")
-    for idx, finding in enumerate(findings[:limit], 1):
-        evidence = "; ".join(finding.evidence or [])
-        lines.append(f"{idx}. [{finding.severity}] {finding.rule_id} {finding.title}: {finding.message}")
-        lines.append(f"   Source: {finding.source}")
-        if evidence:
-            lines.append(f"   Evidence: {evidence}")
-    if len(findings) > limit:
-        lines.append(f"... {len(findings) - limit} more script findings omitted by finding budget.")
+    samples = _balanced_finding_samples(by_rule, limit)
+    for idx, finding in enumerate(samples, 1):
+        lines.extend(_finding_digest_lines(idx, finding))
+    omitted = len(findings) - len(samples)
+    if omitted > 0:
+        lines.append(f"... {omitted} more script findings omitted by balanced finding budget.")
     return "\n".join(lines)
+
+
+def _balanced_finding_samples(by_rule: dict[str, list[Finding]], limit: int) -> list[Finding]:
+    if limit <= 0:
+        return []
+    rule_ids = sorted(by_rule)
+    per_rule = max(1, limit // max(1, len(rule_ids)))
+    samples: list[Finding] = []
+    for rule_id in rule_ids:
+        samples.extend(by_rule[rule_id][:per_rule])
+    remaining = limit - len(samples)
+    if remaining <= 0:
+        return samples[:limit]
+    already = {id(finding) for finding in samples}
+    for finding in [item for rule_id in rule_ids for item in by_rule[rule_id]]:
+        if id(finding) in already:
+            continue
+        samples.append(finding)
+        if len(samples) >= limit:
+            break
+    return samples
+
+
+def _finding_digest_lines(idx: int, finding: Finding) -> list[str]:
+    evidence = "; ".join(finding.evidence or [])
+    lines = [f"{idx}. [{finding.severity}] {finding.rule_id} {finding.title}: {finding.message}", f"   Source: {finding.source}"]
+    if evidence:
+        lines.append(f"   Evidence: {evidence}")
+    return lines
 
 
 def render_rule_list() -> str:

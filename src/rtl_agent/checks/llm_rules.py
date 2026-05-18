@@ -19,6 +19,7 @@ You are reviewing RTL integration evidence. Follow these rules:
 - Return at most 6 risks.
 - For each risk use exactly four bullets: Evidence, Impact, Confidence, Next check.
 - Confidence must be High, Medium, or Low with one short reason.
+- Use plain ASCII punctuation.
 - If evidence is insufficient, say what extra RTL slice or file line is needed.
 - Do not propose RTL edits unless the evidence directly supports them.
 """
