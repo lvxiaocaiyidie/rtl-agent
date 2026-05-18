@@ -1,0 +1,3 @@
+source,target,kind,signal,description
+irq_top.spi_irq,irq_top.irq[6],signalSearch,spi_irq,Example Verdi/sim connectivity row
+irq_top.irq,irq_cpu.irq,findInstDefwild,irq,Example instance-resolved connectivity row

@@ -206,6 +206,28 @@ endmodule
             self.assertIn(("rtl:top.spi_irq", "rtl:top.irq[6]", "rtl_aggregates_bit"), edge_kinds)
             self.assertFalse(any(issue["kind"] == "table_interrupt_without_rtl_match" for issue in graph.issues))
 
+    def test_contract_graph_accepts_noc_crg_eda_and_blackbox_inputs(self):
+        index = build_index(Path("examples/irq_soc"), top=["irq_top"])
+        graph = build_contract_graph(
+            index,
+            root=Path("examples/irq_soc").resolve(),
+            address_maps=[Path("examples/contracts/address_map.csv")],
+            reg_tables=[Path("examples/contracts/registers.csv")],
+            interrupt_tables=[Path("examples/contracts/interrupts.csv")],
+            noc_tables=[Path("examples/contracts/noc.csv")],
+            crg_tables=[Path("examples/contracts/crg.csv")],
+            eda_tables=[Path("examples/contracts/eda_connectivity.csv")],
+            blackbox_tables=[Path("examples/contracts/blackboxes.csv")],
+        )
+        kinds = {edge.kind for edge in graph.edges}
+        self.assertIn("noc_route", kinds)
+        self.assertIn("drives_clock", kinds)
+        self.assertIn("drives_reset", kinds)
+        self.assertIn("eda_signalsearch", kinds)
+        self.assertIn("has_interface_contract", kinds)
+        self.assertIn("matches_rtl_object", kinds)
+        self.assertFalse(any(issue["kind"] == "blackbox_missing_interface_contract" for issue in graph.issues))
+
 
 if __name__ == "__main__":
     unittest.main()

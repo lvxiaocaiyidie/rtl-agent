@@ -1,0 +1,2 @@
+block,clock,reset_signal,domain,frequency,polarity,description
+irq_top,clk,rst_n,sys,100MHz,active_low,Main clock/reset contract for irq_top

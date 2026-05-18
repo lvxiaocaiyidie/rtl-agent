@@ -22,7 +22,7 @@ python -m rtl_agent list-model-levels
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
 python -m rtl_agent model examples/tiny_soc --top soc_top --level l3 -o out
 python -m rtl_agent interrupts examples/tiny_soc --top soc_top -o out/interrupts
-python -m rtl_agent contracts examples/irq_soc --top irq_top --address-map examples/contracts/address_map.csv --reg-table examples/contracts/registers.csv --interrupt-table examples/contracts/interrupts.csv -o out/contracts
+python -m rtl_agent contracts examples/irq_soc --top irq_top --address-map examples/contracts/address_map.csv --reg-table examples/contracts/registers.csv --interrupt-table examples/contracts/interrupts.csv --noc-table examples/contracts/noc.csv --crg-table examples/contracts/crg.csv --eda-connectivity examples/contracts/eda_connectivity.csv --blackbox-table examples/contracts/blackboxes.csv -o out/contracts
 python -m rtl_agent ui examples/tiny_soc --top soc_top -o out/ui
 python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
 python -m rtl_agent slice examples/tiny_soc --module soc_top --instance u_fabric
@@ -192,23 +192,34 @@ This is deliberately shaped as an extendable contract graph. The next meaningful
 
 ## SoC Contract Graph
 
-Use `contracts` when you have project-owned tables in addition to RTL. The command accepts CSV, TSV, or XLSX files and merges the parsed table facts with the RTL-derived interrupt graph:
+Use `contracts` when you have project-owned tables or EDA/script outputs in addition to RTL. The command accepts CSV, TSV, or XLSX files and merges parsed facts with RTL-derived hierarchy, interface, clock/reset, and interrupt evidence:
 
 ```powershell
 python -m rtl_agent contracts path/to/rtl --top my_soc_top `
   --address-map path/to/address_map.xlsx `
   --reg-table path/to/registers.xlsx `
   --interrupt-table path/to/interrupts.xlsx `
+  --noc-table path/to/noc.xlsx `
+  --crg-table path/to/crg.xlsx `
+  --eda-connectivity path/to/verdi_connectivity.csv `
+  --blackbox-table path/to/blackboxes.xlsx `
   -o out/my_soc_contract
 ```
 
-The table importer uses header aliases, so columns such as `block`, `base address`, `offset`, `register`, `field`, `bits`, `access`, `interrupt`, `irq number`, and `rtl signal` are normalized into one schema. The output graph adds nodes such as address blocks, registers, fields, interrupt specs, software IRQ numbers, and RTL interrupt signals. It then creates edges such as:
+The table importer uses header aliases, so columns such as `block`, `base address`, `offset`, `register`, `field`, `bits`, `access`, `interrupt`, `irq number`, `rtl signal`, `master`, `slave`, `route id`, `clock`, `reset`, `domain`, `endpoint`, and `source/target` are normalized into one schema. The output graph adds nodes such as address blocks, registers, fields, interrupt specs, software IRQ numbers, NoC endpoints, route IDs, clock/reset signals, blackboxes, EDA objects, and RTL objects. It then creates edges such as:
 
 - `contains_register`
 - `has_field`
 - `documents_interrupt`
 - `maps_to_sw_irq`
 - `matches_rtl_signal`
+- `matches_rtl_object`
+- `noc_route`
+- `uses_route_id`
+- `drives_clock`
+- `drives_reset`
+- `has_interface_contract`
+- `eda_*`
 - `rtl_instance_connection`
 - `rtl_aggregates_bit`
 - `rtl_state_observation`
@@ -220,6 +231,11 @@ This starts catching integration-contract issues that VCS does not judge semanti
 - documented interrupt appears tied off in RTL
 - register field names and RTL signal names need fuzzy semantic review
 - software IRQ number assignment needs review against aggregation bits
+- NoC endpoint or route ID metadata cannot be matched to RTL/EDA evidence
+- blackbox metadata lacks interface, clock, or reset contracts
+- EDA-resolved connectivity disagrees with lightweight RTL parsing
+
+`--eda-connectivity` is intentionally generic so project scripts can feed the graph without a hard Verdi dependency. A simple exported CSV with `source,target,kind,signal,description` is enough to ingest outputs from flows around `simv.daidir`, `signalSearch.pl`, `findInstDefwild.pl`, or internal wrappers. EDA evidence should be treated as stronger than lightweight RTL parsing when the two disagree.
 
 The graph is intentionally evidence-first. Each node and edge keeps either an RTL file:line label or a table row label, so an LLM or agent can reason from compact facts and then request only the original slices it needs.
 
@@ -230,6 +246,10 @@ python -m rtl_agent contracts path/to/rtl --top my_soc_top `
   --address-map path/to/address_map.xlsx `
   --reg-table path/to/registers.xlsx `
   --interrupt-table path/to/interrupts.xlsx `
+  --noc-table path/to/noc.xlsx `
+  --crg-table path/to/crg.xlsx `
+  --eda-connectivity path/to/verdi_connectivity.csv `
+  --blackbox-table path/to/blackboxes.xlsx `
   --llm `
   -o out/my_soc_contract
 ```

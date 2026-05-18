@@ -90,7 +90,7 @@ def render_contract_dashboard(graph: ContractGraph) -> str:
         metric('Edges', graph.edges.length),
         metric('Issues', graph.issues.length),
         metric('Tables', (graph.summary.tables || []).length),
-        metric('Matched RTL', graph.edges.filter(e => e.kind === 'matches_rtl_signal').length)
+        metric('RTL Matches', graph.edges.filter(e => e.kind === 'matches_rtl_signal' || e.kind === 'matches_rtl_object').length)
       ].join('');
     }}
     function initIssues() {{

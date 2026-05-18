@@ -1,0 +1,2 @@
+master,slave,endpoint,route_id,protocol,qos,security,width,description
+irq_top,irq_cpu,irq_top_irq,R6,AXI-Lite,low,secure,32,Example path from interrupt subsystem to CPU domain

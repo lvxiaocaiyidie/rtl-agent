@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     intr_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
     intr_p.add_argument("--format", choices=["md", "json"], default="md")
 
-    contract_p = sub.add_parser("contracts", help="Merge RTL, address-map, register, and interrupt evidence into a SoC contract graph.")
+    contract_p = sub.add_parser("contracts", help="Merge RTL, tables, EDA evidence, and blackbox metadata into a SoC contract graph.")
     contract_p.add_argument("rtl_root")
     contract_p.add_argument("-o", "--out", default="out/contract")
     contract_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
@@ -95,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
     contract_p.add_argument("--address-map", action="append", default=[], help="CSV/TSV/XLSX address map. Can be repeated.")
     contract_p.add_argument("--reg-table", action="append", default=[], help="CSV/TSV/XLSX register table. Can be repeated.")
     contract_p.add_argument("--interrupt-table", action="append", default=[], help="CSV/TSV/XLSX interrupt table. Can be repeated.")
+    contract_p.add_argument("--noc-table", action="append", default=[], help="CSV/TSV/XLSX NoC or bus endpoint table. Can be repeated.")
+    contract_p.add_argument("--crg-table", action="append", default=[], help="CSV/TSV/XLSX clock/reset/domain table. Can be repeated.")
+    contract_p.add_argument("--eda-connectivity", action="append", default=[], help="CSV/TSV/XLSX EDA or Verdi connectivity evidence. Can be repeated.")
+    contract_p.add_argument("--blackbox-table", action="append", default=[], help="CSV/TSV/XLSX blackbox metadata table. Can be repeated.")
     contract_p.add_argument("--format", choices=["md", "json"], default="md")
     contract_p.add_argument("--stdout", action="store_true", help="Print the selected format instead of writing artifacts.")
     contract_p.add_argument("--llm", action="store_true", help="Run optional OpenAI-compatible LLM review over the contract graph.")
@@ -195,11 +199,35 @@ def main(argv: list[str] | None = None) -> int:
         address_maps = [Path(path) for path in args.address_map]
         reg_tables = [Path(path) for path in args.reg_table]
         interrupt_tables = [Path(path) for path in args.interrupt_table]
+        noc_tables = [Path(path) for path in args.noc_table]
+        crg_tables = [Path(path) for path in args.crg_table]
+        eda_tables = [Path(path) for path in args.eda_connectivity]
+        blackbox_tables = [Path(path) for path in args.blackbox_table]
         if args.stdout:
             text = (
-                render_contract_json(index, root=root.resolve(), address_maps=address_maps, reg_tables=reg_tables, interrupt_tables=interrupt_tables)
+                render_contract_json(
+                    index,
+                    root=root.resolve(),
+                    address_maps=address_maps,
+                    reg_tables=reg_tables,
+                    interrupt_tables=interrupt_tables,
+                    noc_tables=noc_tables,
+                    crg_tables=crg_tables,
+                    eda_tables=eda_tables,
+                    blackbox_tables=blackbox_tables,
+                )
                 if args.format == "json"
-                else render_contract_markdown(index, root=root.resolve(), address_maps=address_maps, reg_tables=reg_tables, interrupt_tables=interrupt_tables)
+                else render_contract_markdown(
+                    index,
+                    root=root.resolve(),
+                    address_maps=address_maps,
+                    reg_tables=reg_tables,
+                    interrupt_tables=interrupt_tables,
+                    noc_tables=noc_tables,
+                    crg_tables=crg_tables,
+                    eda_tables=eda_tables,
+                    blackbox_tables=blackbox_tables,
+                )
             )
             print(text)
             return 0
@@ -210,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:
             address_maps=address_maps,
             reg_tables=reg_tables,
             interrupt_tables=interrupt_tables,
+            noc_tables=noc_tables,
+            crg_tables=crg_tables,
+            eda_tables=eda_tables,
+            blackbox_tables=blackbox_tables,
         )
         if args.llm:
             (Path(args.out) / "llm_contract_review.md").write_text(_run_contract_llm_review(graph, args), encoding="utf-8")

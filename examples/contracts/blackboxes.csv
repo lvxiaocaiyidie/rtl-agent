@@ -1,0 +1,2 @@
+blackbox,endpoint,protocol,clock,reset_signal,interrupt,signal,description
+irq_top,irq_top_irq,AXI-Lite,clk,rst_n,spi_irq,spi_irq,Blackbox metadata needed before integration generation
