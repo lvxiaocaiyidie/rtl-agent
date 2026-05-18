@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from rtl_agent.indexer import build_index
+from rtl_agent.contracts import build_contract_graph
 from rtl_agent.interrupts import build_interrupt_graph
 from rtl_agent.llm import LLMConfig, get_api_key
 from rtl_agent.modeler import build_rtl_model
@@ -163,6 +164,47 @@ endmodule
             self.assertIn(("top.irq", "cpu.irq", "instance_connection"), edges)
             self.assertIn(("top.irq", "top.status_rdata", "state_observation"), edges)
             self.assertNotIn(("top.ENABLE_IRQ", "top.regfile_size", "state_observation"), edges)
+
+    def test_contract_graph_merges_tables_with_rtl_interrupts(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "top.sv").write_text(
+                """
+module cpu(input [31:0] irq);
+endmodule
+
+module top(input spi_irq);
+  reg [31:0] irq;
+  wire [31:0] irq_status_rdata;
+  always @* begin
+    irq = 0;
+    irq[6] = spi_irq;
+    irq_status_rdata = irq;
+  end
+  cpu u_cpu(.irq(irq));
+endmodule
+""",
+                encoding="utf-8",
+            )
+            interrupt_csv = root / "interrupts.csv"
+            interrupt_csv.write_text(
+                "block,register,field,interrupt,irq_number,signal,description\n"
+                "soc,IRQ_STATUS,SPI_IRQ,spi_irq,6,spi_irq,SPI interrupt\n",
+                encoding="utf-8",
+            )
+            regs_csv = root / "regs.csv"
+            regs_csv.write_text(
+                "block,base_address,offset,register,field,bits,access\n"
+                "soc,0x40000000,0x10,IRQ_STATUS,SPI_IRQ,6,RO\n",
+                encoding="utf-8",
+            )
+            index = build_index(root, top=["top"])
+            graph = build_contract_graph(index, root=root, reg_tables=[regs_csv], interrupt_tables=[interrupt_csv])
+            edge_kinds = {(edge.source, edge.target, edge.kind) for edge in graph.edges}
+            self.assertTrue(any(edge.kind == "matches_rtl_signal" and edge.target == "rtl:top.spi_irq" for edge in graph.edges))
+            self.assertTrue(any(edge.kind == "maps_to_sw_irq" for edge in graph.edges))
+            self.assertIn(("rtl:top.spi_irq", "rtl:top.irq[6]", "rtl_aggregates_bit"), edge_kinds)
+            self.assertFalse(any(issue["kind"] == "table_interrupt_without_rtl_match" for issue in graph.issues))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .checks import render_rule_list, run_checks
 from .checks.llm_rules import LLMIntegrationReviewRule
+from .contracts import contract_llm_messages, render_contract_json, render_contract_markdown, write_contract_artifacts
 from .dashboard import render_dashboard
 from .interrupts import render_interrupt_json, render_interrupt_markdown
 from .indexer import build_index
@@ -85,6 +86,20 @@ def main(argv: list[str] | None = None) -> int:
     intr_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
     intr_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
     intr_p.add_argument("--format", choices=["md", "json"], default="md")
+
+    contract_p = sub.add_parser("contracts", help="Merge RTL, address-map, register, and interrupt evidence into a SoC contract graph.")
+    contract_p.add_argument("rtl_root")
+    contract_p.add_argument("-o", "--out", default="out/contract")
+    contract_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
+    contract_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
+    contract_p.add_argument("--address-map", action="append", default=[], help="CSV/TSV/XLSX address map. Can be repeated.")
+    contract_p.add_argument("--reg-table", action="append", default=[], help="CSV/TSV/XLSX register table. Can be repeated.")
+    contract_p.add_argument("--interrupt-table", action="append", default=[], help="CSV/TSV/XLSX interrupt table. Can be repeated.")
+    contract_p.add_argument("--format", choices=["md", "json"], default="md")
+    contract_p.add_argument("--stdout", action="store_true", help="Print the selected format instead of writing artifacts.")
+    contract_p.add_argument("--llm", action="store_true", help="Run optional OpenAI-compatible LLM review over the contract graph.")
+    contract_p.add_argument("--llm-config", default="rtl-agent.toml", help="Path to LLM config file.")
+    contract_p.add_argument("--env-file", default=".env.local", help="Path to env file containing the API key.")
 
     sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
     sub.add_parser("list-reduction-rules", help="List RTL reduction rules used for model-facing context.")
@@ -175,6 +190,31 @@ def main(argv: list[str] | None = None) -> int:
         path.write_text(text, encoding="utf-8")
         print(f"Wrote interrupt graph to {path}")
         return 0
+    if args.cmd == "contracts":
+        index = _build_index_from_args(root, args)
+        address_maps = [Path(path) for path in args.address_map]
+        reg_tables = [Path(path) for path in args.reg_table]
+        interrupt_tables = [Path(path) for path in args.interrupt_table]
+        if args.stdout:
+            text = (
+                render_contract_json(index, root=root.resolve(), address_maps=address_maps, reg_tables=reg_tables, interrupt_tables=interrupt_tables)
+                if args.format == "json"
+                else render_contract_markdown(index, root=root.resolve(), address_maps=address_maps, reg_tables=reg_tables, interrupt_tables=interrupt_tables)
+            )
+            print(text)
+            return 0
+        graph = write_contract_artifacts(
+            index,
+            Path(args.out),
+            root=root.resolve(),
+            address_maps=address_maps,
+            reg_tables=reg_tables,
+            interrupt_tables=interrupt_tables,
+        )
+        if args.llm:
+            (Path(args.out) / "llm_contract_review.md").write_text(_run_contract_llm_review(graph, args), encoding="utf-8")
+        print(f"Wrote contract graph to {Path(args.out) / 'contract_graph.md'} ({len(graph.nodes)} nodes, {len(graph.edges)} edges)")
+        return 0
     return 1
 
 
@@ -227,6 +267,19 @@ def _run_llm_review(index, args) -> str:
     for finding in findings:
         lines.extend([finding.message, ""])
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _run_contract_llm_review(graph, args) -> str:
+    config = load_llm_config(Path(args.llm_config), Path(args.env_file))
+    if not has_api_key(config):
+        return (
+            "# LLM Contract Review\n\n"
+            f"Contract review was requested, but no usable API key was found for `{config.api_key_env}`.\n\n"
+            "Add a local `.env.local` file or set the environment variable, then rerun `rtl-agent contracts ... --llm`.\n"
+        )
+    client = OpenAICompatibleClient(config)
+    review = client.chat(contract_llm_messages(graph), temperature=0.1)
+    return "# LLM Contract Review\n\n" + review.rstrip() + "\n"
 
 
 def _source_slice(index, root: Path, module_name: str, instance_name: str | None = None, context_lines: int = 20) -> str:

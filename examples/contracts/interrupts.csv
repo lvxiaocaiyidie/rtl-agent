@@ -1,0 +1,3 @@
+block,register,field,interrupt,irq_number,signal,description
+soc,IRQ_STATUS,SPI_IRQ,spi_irq,6,spi_irq,SPI interrupt routed to CPU IRQ bit 6
+soc,IRQ_STATUS,GPIO_IRQ,gpio_irq,7,gpio_irq,GPIO interrupt routed to CPU IRQ bit 7

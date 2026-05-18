@@ -22,6 +22,7 @@ python -m rtl_agent list-model-levels
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
 python -m rtl_agent model examples/tiny_soc --top soc_top --level l3 -o out
 python -m rtl_agent interrupts examples/tiny_soc --top soc_top -o out/interrupts
+python -m rtl_agent contracts examples/irq_soc --top irq_top --address-map examples/contracts/address_map.csv --reg-table examples/contracts/registers.csv --interrupt-table examples/contracts/interrupts.csv -o out/contracts
 python -m rtl_agent ui examples/tiny_soc --top soc_top -o out/ui
 python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
 python -m rtl_agent slice examples/tiny_soc --module soc_top --instance u_fabric
@@ -39,6 +40,10 @@ Artifacts:
 - `out/rtl_model_l1.yaml`: layered RTL model for script, LLM, or agent workflows
 - `out/interrupt_graph.md`: interrupt contract graph with source evidence
 - `out/interrupt_graph.json`: machine-readable interrupt contract graph
+- `out/contract_graph.md`: merged SoC contract graph from RTL and project tables
+- `out/contract_graph.json`: machine-readable contract graph for agents
+- `out/contract_dashboard.html`: interactive contract graph browser
+- `out/agent_handoff.md`: concise handoff prompt for LLM or coding-agent review
 - `out/reduced_context.md`: LLM-facing reduced RTL context
 - `out/reduced_context.json`: machine-readable reduced RTL context
 - `out/reduction_rules.md`: explicit reduction policy
@@ -184,6 +189,84 @@ The current graph is RTL-derived and script-first. It records:
 - file and line evidence for each node and edge
 
 This is deliberately shaped as an extendable contract graph. The next meaningful importers should merge project-owned evidence into the same graph instead of creating separate reports: interrupt spreadsheet rows, register table rows, address-map ownership, NoC endpoint metadata, clock/reset ownership from diagrams, and EDA-resolved connectivity from Verdi or simulation databases. LLM or agent reviewers should then explain gaps and naming mismatches on top of this graph, while scripts keep the traceable facts.
+
+## SoC Contract Graph
+
+Use `contracts` when you have project-owned tables in addition to RTL. The command accepts CSV, TSV, or XLSX files and merges the parsed table facts with the RTL-derived interrupt graph:
+
+```powershell
+python -m rtl_agent contracts path/to/rtl --top my_soc_top `
+  --address-map path/to/address_map.xlsx `
+  --reg-table path/to/registers.xlsx `
+  --interrupt-table path/to/interrupts.xlsx `
+  -o out/my_soc_contract
+```
+
+The table importer uses header aliases, so columns such as `block`, `base address`, `offset`, `register`, `field`, `bits`, `access`, `interrupt`, `irq number`, and `rtl signal` are normalized into one schema. The output graph adds nodes such as address blocks, registers, fields, interrupt specs, software IRQ numbers, and RTL interrupt signals. It then creates edges such as:
+
+- `contains_register`
+- `has_field`
+- `documents_interrupt`
+- `maps_to_sw_irq`
+- `matches_rtl_signal`
+- `rtl_instance_connection`
+- `rtl_aggregates_bit`
+- `rtl_state_observation`
+
+This starts catching integration-contract issues that VCS does not judge semantically:
+
+- table interrupt exists but no RTL interrupt signal matches it
+- top-level RTL interrupt exists but no table/software-visible entry matches it
+- documented interrupt appears tied off in RTL
+- register field names and RTL signal names need fuzzy semantic review
+- software IRQ number assignment needs review against aggregation bits
+
+The graph is intentionally evidence-first. Each node and edge keeps either an RTL file:line label or a table row label, so an LLM or agent can reason from compact facts and then request only the original slices it needs.
+
+Optional OpenAI-compatible review is available:
+
+```powershell
+python -m rtl_agent contracts path/to/rtl --top my_soc_top `
+  --address-map path/to/address_map.xlsx `
+  --reg-table path/to/registers.xlsx `
+  --interrupt-table path/to/interrupts.xlsx `
+  --llm `
+  -o out/my_soc_contract
+```
+
+The LLM receives only a compact graph payload: summary, issues, high-value edges, and agent handoff rules. The full RTL is not sent unless a later agent step explicitly calls `slice`.
+
+## Claude Code / Agent Handoff
+
+`contracts` writes `agent_handoff.md` next to the graph. That file is designed to be pasted or referenced as the first task for Claude Code or another coding agent:
+
+```powershell
+python -m rtl_agent contracts path/to/rtl --top my_soc_top `
+  --address-map path/to/address_map.xlsx `
+  --reg-table path/to/registers.xlsx `
+  --interrupt-table path/to/interrupts.xlsx `
+  -o out/my_soc_contract
+```
+
+Recommended collaboration pattern:
+
+1. Run `rtl-agent contracts` locally.
+2. Give Claude Code `out/my_soc_contract/contract_graph.json`, `contract_graph.md`, and `agent_handoff.md`.
+3. Ask it to review contract mismatches first, not to parse the whole RTL tree from scratch.
+4. When it is uncertain, have it run `rtl-agent slice path/to/rtl --module <module> --context-lines 40`.
+5. Keep all fixes or conclusions tied to graph evidence plus exact RTL/table rows.
+
+The intended split is:
+
+- scripts extract reproducible facts from RTL, spreadsheets, and future EDA outputs
+- LLMs or agents perform semantic matching, naming judgement, explanation, and patch planning
+- source slices are fetched only when the graph evidence is insufficient
+
+For Claude Code specifically, a good first instruction is:
+
+```text
+Read contract_graph.md, contract_graph.json, and agent_handoff.md. Review SoC integration contract mismatches first. Do not parse the whole RTL tree from scratch. If an edge or issue is uncertain, ask to run the suggested rtl-agent slice command and cite the graph evidence you used.
+```
 
 ## Interactive UI
 

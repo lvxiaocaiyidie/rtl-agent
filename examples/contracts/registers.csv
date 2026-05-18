@@ -1,0 +1,5 @@
+block,base_address,offset,register,field,bits,access,interrupt,irq_number,signal,description
+soc,0x40000000,0x10,IRQ_STATUS,SPI_IRQ,6,RO,spi_irq,6,spi_irq,Latched SPI interrupt status
+soc,0x40000000,0x10,IRQ_STATUS,GPIO_IRQ,7,RO,gpio_irq,7,gpio_irq,Latched GPIO interrupt status
+soc,0x40000000,0x14,IRQ_ENABLE,SPI_IRQ_EN,6,RW,spi_irq,6,spi_irq,SPI interrupt enable
+soc,0x40000000,0x14,IRQ_ENABLE,GPIO_IRQ_EN,7,RW,gpio_irq,7,gpio_irq,GPIO interrupt enable
