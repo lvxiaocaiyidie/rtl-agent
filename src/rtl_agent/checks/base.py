@@ -33,6 +33,7 @@ class CheckRule(Protocol):
     title: str
     severity: str
     category: str
+    value: str
     description: str
     requires_llm: bool
 
@@ -45,6 +46,7 @@ class ScriptRule:
     title = ""
     severity = "P3"
     category = "general"
+    value = "architecture_insight"
     description = ""
     requires_llm = False
 

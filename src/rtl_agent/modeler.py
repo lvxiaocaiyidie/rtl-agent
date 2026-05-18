@@ -19,15 +19,25 @@ MODEL_LEVELS = [
     },
     {
         "id": "l2",
-        "title": "Behavior and integration intent model",
-        "description": "L1 plus protocol hints, state/behavior hints, semantic risks, and source-slice queries for multi-turn review.",
+        "title": "Interface and protocol graph",
+        "description": "L1 plus protocol hints, interface groups, and clock/reset summaries.",
+    },
+    {
+        "id": "l3",
+        "title": "Architecture intent model",
+        "description": "L2 plus inferred CPU, memory, peripheral, bus, clock/reset, and integration-risk views.",
+    },
+    {
+        "id": "l4",
+        "title": "Generation planning model",
+        "description": "L3 plus wrapper, blackbox, tie-off, and source-slice tasks for future agent-driven RTL generation.",
     },
 ]
 
 
 def build_rtl_model(index: DesignIndex, level: str = "l1", max_modules: int = 200) -> dict[str, Any]:
     level = level.lower()
-    if level not in {"l0", "l1", "l2"}:
+    if level not in {"l0", "l1", "l2", "l3", "l4"}:
         raise ValueError(f"unknown model level: {level}")
     modules = _ordered_modules(index)[:max_modules]
     model: dict[str, Any] = {
@@ -47,13 +57,20 @@ def build_rtl_model(index: DesignIndex, level: str = "l1", max_modules: int = 20
         "subsystems": _count_attr(index, "subsystem"),
         "roles": _count_attr(index, "role"),
     }
-    if level in {"l1", "l2"}:
-        model["components"] = [_component_model(module, include_behavior=level == "l2") for module in modules]
+    if level in {"l1", "l2", "l3", "l4"}:
+        model["components"] = [_component_model(module, include_behavior=level in {"l2", "l3", "l4"}) for module in modules]
         model["truncated_components"] = max(0, len(_ordered_modules(index)) - len(modules))
-    if level == "l2":
+    if level in {"l2", "l3", "l4"}:
         model["integration_intent"] = {
             "protocol_hints": _protocol_hints(modules),
             "clock_domains": _clock_domain_summary(modules),
+        }
+    if level in {"l3", "l4"}:
+        model["architecture"] = _architecture_model(index, modules)
+    if level == "l4":
+        model["generation_plan"] = {
+            "blackbox_tasks": [{"module": name, "action": "provide_model_or_stub"} for name in index.unresolved_modules[:80]],
+            "wrapper_candidates": _wrapper_candidates(modules),
             "review_queries": _review_queries(index, modules[:40]),
         }
     return model
@@ -137,6 +154,43 @@ def _module_protocols(module: Module) -> list[str]:
         if any(token in text for token in tokens):
             protocols.append(name)
     return protocols
+
+
+def _architecture_model(index: DesignIndex, modules: list[Module]) -> dict[str, Any]:
+    return {
+        "top_components": [
+            {"name": name, "source": index.modules[name].source.label(), "role": index.modules[name].role}
+            for name in index.top_modules
+            if name in index.modules
+        ],
+        "cpu_like": _role_or_name_hits(modules, ("cpu", "core", "picorv", "ibex", "riscv")),
+        "bus_like": [module.name for module in modules if module.role == "bus_or_protocol_logic" or _module_protocols(module)],
+        "memory_like": [module.name for module in modules if module.role == "memory_or_cache" or "ram" in module.name.lower() or "mem" in module.name.lower()],
+        "peripheral_like": _role_or_name_hits(modules, ("uart", "spi", "gpio", "timer", "plic", "i2c", "pwm")),
+        "clock_reset": {
+            "multi_clock_modules": [module.name for module in modules if len(module.clocks) > 1][:80],
+            "resetless_sequential_candidates": [
+                module.name for module in modules if module.procedural_blocks and module.clocks and not module.resets
+            ][:80],
+        },
+    }
+
+
+def _role_or_name_hits(modules: list[Module], tokens: tuple[str, ...]) -> list[str]:
+    hits = []
+    for module in modules:
+        text = " ".join([module.name, module.role, module.subsystem]).lower()
+        if any(token in text for token in tokens):
+            hits.append(module.name)
+    return hits
+
+
+def _wrapper_candidates(modules: list[Module]) -> list[dict[str, Any]]:
+    candidates = []
+    for module in modules:
+        if module.role in {"integration_wrapper", "bus_or_protocol_logic"} and len(module.ports) > 20:
+            candidates.append({"module": module.name, "port_count": len(module.ports), "source": module.source.label()})
+    return candidates[:80]
 
 
 def _clock_domain_summary(modules: list[Module]) -> list[dict[str, Any]]:

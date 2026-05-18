@@ -94,16 +94,14 @@ def _extract_ports(header: str, body: str, rel: str, base_line: int) -> list[Por
             width_match = re.search(r"\[[^\]]+\]", rest)
             width = width_match.group(0) if width_match else ""
             without_width = re.sub(r"\[[^\]]+\]", " ", rest)
-            tokens = re.findall(r"[a-zA-Z_][\w$]*", without_width)
-            type_tokens = []
-            name = ""
-            for token in tokens:
-                if token in {"wire", "reg", "logic", "signed", "unsigned"} or token.endswith("_t") or "::" in token:
-                    type_tokens.append(token)
-                else:
-                    name = token
-            if name and name not in KEYWORDS:
-                ports.append(Port(name, direction, " ".join(type_tokens), width, SourceRange(rel, base_line + offset + idx, base_line + offset + idx)))
+            type_tokens = [
+                token
+                for token in re.findall(r"[a-zA-Z_][\w$]*", without_width)
+                if token in {"wire", "reg", "logic", "signed", "unsigned"} or token.endswith("_t") or "::" in token
+            ]
+            for name in _split_names(without_width):
+                if name and name not in KEYWORDS and name not in {"wire", "reg", "logic", "signed", "unsigned"}:
+                    ports.append(Port(name, direction, " ".join(type_tokens), width, SourceRange(rel, base_line + offset + idx, base_line + offset + idx)))
     return _unique_by_name(ports)
 
 

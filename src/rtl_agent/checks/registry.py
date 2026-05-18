@@ -26,21 +26,41 @@ CHECK_RULES: list[CheckRule] = [
 ]
 
 
-def get_rules(rule_ids: list[str] | None = None, include_orphan: bool = False) -> list[CheckRule]:
+def get_rules(rule_ids: list[str] | None = None, include_orphan: bool = False, insight_only: bool = False) -> list[CheckRule]:
     rules = CHECK_RULES
     if not include_orphan:
         rules = [rule for rule in rules if rule.rule_id != "RTL005"]
+    if insight_only:
+        rules = [rule for rule in rules if rule.value == "architecture_insight"]
     if not rule_ids:
         return rules
     wanted = {rule_id.upper() for rule_id in rule_ids}
-    return [rule for rule in rules if rule.rule_id.upper() in wanted or rule.category.upper() in wanted]
+    return [rule for rule in rules if rule.rule_id.upper() in wanted or rule.category.upper() in wanted or rule.value.upper() in wanted]
 
 
-def run_checks(index: DesignIndex, rule_ids: list[str] | None = None, include_orphan: bool = False) -> list[Finding]:
+def run_checks(
+    index: DesignIndex,
+    rule_ids: list[str] | None = None,
+    include_orphan: bool = False,
+    insight_only: bool = False,
+) -> list[Finding]:
     findings: list[Finding] = []
-    for rule in get_rules(rule_ids, include_orphan=include_orphan):
+    for rule in get_rules(rule_ids, include_orphan=include_orphan, insight_only=insight_only):
         findings.extend(rule.run(index))
     return findings
+
+
+def rule_metadata() -> dict[str, dict[str, str]]:
+    return {
+        rule.rule_id: {
+            "title": rule.title,
+            "severity": rule.severity,
+            "category": rule.category,
+            "value": rule.value,
+            "description": rule.description,
+        }
+        for rule in CHECK_RULES
+    }
 
 
 def render_findings_digest(findings: list[Finding], limit: int = 40) -> str:
@@ -103,6 +123,7 @@ def render_rule_list() -> str:
                 "",
                 f"- Severity: {rule.severity}",
                 f"- Category: {rule.category}",
+                f"- Value: {rule.value}",
                 f"- LLM required: {llm}",
                 f"- Description: {rule.description}",
                 "",

@@ -76,6 +76,24 @@ endmodule
             findings = run_basic_checks(index)
             self.assertFalse(any(finding.rule_id == "RTL002" for finding in findings))
 
+    def test_multiple_ports_on_one_declaration_line(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "top.sv").write_text(
+                """
+module top(
+  input clk, resetn,
+  output reg trap
+);
+endmodule
+""",
+                encoding="utf-8",
+            )
+            index = build_index(root, top=["top"])
+            self.assertEqual({port.name for port in index.modules["top"].ports}, {"clk", "resetn", "trap"})
+            self.assertIn("clk", index.modules["top"].clocks)
+            self.assertIn("resetn", index.modules["top"].resets)
+
     def test_env_file_with_bom_is_supported(self):
         with TemporaryDirectory() as tmp:
             env_path = Path(tmp) / ".env.local"

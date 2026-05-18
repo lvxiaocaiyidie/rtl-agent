@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .checks import render_rule_list
+from .checks import render_rule_list, run_checks
 from .checks.llm_rules import LLMIntegrationReviewRule
+from .dashboard import render_dashboard
 from .indexer import build_index
 from .llm import OpenAICompatibleClient, has_api_key, load_llm_config
 from .modeler import render_model_json, render_model_levels, render_model_yaml
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     check_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
     check_p.add_argument("--rule", action="append", default=[], help="Run only one rule ID or category. Can be repeated.")
     check_p.add_argument("--include-orphans", action="store_true", help="Report unreachable modules as findings.")
+    check_p.add_argument("--insight-only", action="store_true", help="Run only architecture/integration insight checks.")
     check_p.add_argument("--report-style", choices=["brief", "full"], default="brief", help="Control SOC report verbosity.")
     check_p.add_argument("--max-findings-per-rule", type=int, default=12, help="Brief report sample budget per rule.")
     check_p.add_argument("--llm", action="store_true", help="Run optional OpenAI-compatible LLM review over reduced context.")
@@ -63,9 +65,18 @@ def main(argv: list[str] | None = None) -> int:
     model_p.add_argument("-o", "--out", default="out")
     model_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
     model_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
-    model_p.add_argument("--level", choices=["l0", "l1", "l2"], default="l1", help="Model abstraction level.")
+    model_p.add_argument("--level", choices=["l0", "l1", "l2", "l3", "l4"], default="l1", help="Model abstraction level.")
     model_p.add_argument("--format", choices=["yaml", "json"], default="yaml")
     model_p.add_argument("--max-modules", type=int, default=200)
+
+    ui_p = sub.add_parser("ui", help="Write an interactive static HTML dashboard.")
+    ui_p.add_argument("rtl_root")
+    ui_p.add_argument("-o", "--out", default="out")
+    ui_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
+    ui_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
+    ui_p.add_argument("--include-orphans", action="store_true", help="Include orphan findings in the dashboard.")
+    ui_p.add_argument("--insight-only", action="store_true", help="Show only architecture/integration insight checks.")
+    ui_p.add_argument("--model-level", choices=["l0", "l1", "l2", "l3", "l4"], default="l3")
 
     sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
     sub.add_parser("list-reduction-rules", help="List RTL reduction rules used for model-facing context.")
@@ -98,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                 include_orphan=args.include_orphans,
                 style=args.report_style,
                 max_per_rule=args.max_findings_per_rule,
+                insight_only=args.insight_only,
             ),
             encoding="utf-8",
         )
@@ -135,6 +147,15 @@ def main(argv: list[str] | None = None) -> int:
         path = out / f"rtl_model_{args.level}.{suffix}"
         path.write_text(text, encoding="utf-8")
         print(f"Wrote RTL model to {path}")
+        return 0
+    if args.cmd == "ui":
+        index = _build_index_from_args(root, args)
+        findings = run_checks(index, include_orphan=args.include_orphans, insight_only=args.insight_only)
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / "dashboard.html"
+        path.write_text(render_dashboard(index, findings, model_level=args.model_level), encoding="utf-8")
+        print(f"Wrote interactive dashboard to {path}")
         return 0
     return 1
 

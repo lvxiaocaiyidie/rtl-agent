@@ -20,7 +20,8 @@ python -m rtl_agent list-rules
 python -m rtl_agent list-reduction-rules
 python -m rtl_agent list-model-levels
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
-python -m rtl_agent model examples/tiny_soc --top soc_top --level l2 -o out
+python -m rtl_agent model examples/tiny_soc --top soc_top --level l3 -o out
+python -m rtl_agent ui examples/tiny_soc --top soc_top -o out/ui
 python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
 python -m rtl_agent slice examples/tiny_soc --module soc_top --instance u_fabric
 python -m rtl_agent ask examples/tiny_soc "which modules look like bus fabric?"
@@ -40,6 +41,7 @@ Artifacts:
 - `out/reduction_rules.md`: explicit reduction policy
 - `out/soc_integration_report.md`: integration-oriented findings
 - `out/llm_review.md`: optional concise model review when `--llm` is enabled
+- `out/dashboard.html`: interactive static UI from the `ui` command
 
 For large RTL libraries, explicitly specify the integration top when you know it:
 
@@ -67,6 +69,17 @@ Initial rule set:
 - `RTL005` module is unreachable from the selected top, opt-in via `--include-orphans`
 - `RTL006` named child clock/reset port is explicitly open or tied to a constant
 - `RTL007` non-trivial module spans multiple detected clock domains
+
+Rules are tagged by value:
+
+- `compile_overlap`: useful hygiene, but VCS/elaboration/lint can often catch it.
+- `architecture_insight`: intended to point at integration intent, CDC/reset/clock risks, or modeling gaps that compilers do not fully judge.
+
+Use `--insight-only` to focus on the second category:
+
+```powershell
+python -m rtl_agent check path/to/rtl --top my_soc_top --insight-only -o out/insight
+```
 
 Run a subset by ID or category:
 
@@ -134,16 +147,30 @@ Use `model` when you want a higher-density representation than RTL, but more str
 python -m rtl_agent list-model-levels
 python -m rtl_agent model path/to/rtl --top my_soc_top --level l0 -o out/my_soc
 python -m rtl_agent model path/to/rtl --top my_soc_top --level l1 --format yaml -o out/my_soc
-python -m rtl_agent model path/to/rtl --top my_soc_top --level l2 --format json -o out/my_soc
+python -m rtl_agent model path/to/rtl --top my_soc_top --level l3 --format json -o out/my_soc
+python -m rtl_agent model path/to/rtl --top my_soc_top --level l4 --format yaml -o out/my_soc
 ```
 
 Model levels are intentionally layered:
 
 - `l0`: design inventory, tops, unresolved modules, subsystem and role counts.
 - `l1`: structural component model with interfaces, clock/reset domains, and instance edges.
-- `l2`: integration-intent model with protocol hints, behavior hints, clock-domain summaries, and source-slice queries for multi-turn agent review.
+- `l2`: interface and protocol graph with protocol hints and clock/reset summaries.
+- `l3`: architecture intent model for CPU, bus, memory, peripheral, clock/reset, and integration-risk views.
+- `l4`: generation planning model with blackbox, wrapper, tie-off, and source-slice tasks for future agent-driven RTL generation.
 
 The current modeler is script-first. Later LLM or agent passes should annotate this model rather than replace it, so facts remain traceable back to RTL line ranges.
+
+## Interactive UI
+
+Generate a static dashboard when you want to browse findings and models interactively:
+
+```powershell
+python -m rtl_agent ui path/to/rtl --top my_soc_top -o out/my_soc_ui
+python -m rtl_agent ui path/to/rtl --top my_soc_top --insight-only --model-level l3 -o out/my_soc_ui
+```
+
+Open `out/my_soc_ui/dashboard.html` in a browser, or serve that directory with any static file server. The UI includes metrics, finding filters, a hierarchy view, module search, model JSON, and rule metadata.
 
 For projects using Emacs verilog-mode AUTOINST/AUTOWIRE/AUTO_TEMPLATE flows, run `rtl-agent` on the expanded or generated RTL whenever possible. The current lightweight parser reads concrete module instances and named connections present in the scanned files; it does not yet execute verilog-mode expansion itself.
 
@@ -154,9 +181,10 @@ RTL source
   -> lexical cleanup
   -> lightweight Verilog/SystemVerilog extraction
   -> design index and hierarchy
-  -> ESL-like model with file:line evidence
-  -> SOC integration checks
-  -> optional OpenAI-compatible reasoning layer
+  -> fact IR and layered RTL models with file:line evidence
+  -> SOC integration checks split into compile-overlap and architecture-insight classes
+  -> optional OpenAI-compatible or agent reasoning layer
+  -> interactive dashboard
 ```
 
 This parser is intentionally conservative. It is not a replacement for a full SystemVerilog compiler. The roadmap is to add optional backends such as Surelog/UHDM, slang, tree-sitter, or Yosys for stronger syntax and elaboration while keeping the same memory/model interface.

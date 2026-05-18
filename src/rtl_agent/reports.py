@@ -158,8 +158,9 @@ def render_soc_report(
     include_orphan: bool = False,
     style: str = "brief",
     max_per_rule: int = 12,
+    insight_only: bool = False,
 ) -> str:
-    findings = run_basic_checks(index, rule_ids=rule_ids, include_orphan=include_orphan)
+    findings = run_basic_checks(index, rule_ids=rule_ids, include_orphan=include_orphan, insight_only=insight_only)
     lines = ["# SOC Integration Report", ""]
     if not findings:
         lines.append("No basic integration findings were detected by the MVP rule set.")
@@ -182,8 +183,13 @@ def render_soc_report(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def run_basic_checks(index: DesignIndex, rule_ids: list[str] | None = None, include_orphan: bool = False) -> list[Finding]:
-    return run_checks(index, rule_ids=rule_ids, include_orphan=include_orphan)
+def run_basic_checks(
+    index: DesignIndex,
+    rule_ids: list[str] | None = None,
+    include_orphan: bool = False,
+    insight_only: bool = False,
+) -> list[Finding]:
+    return run_checks(index, rule_ids=rule_ids, include_orphan=include_orphan, insight_only=insight_only)
 
 
 def _finding_summary_lines(findings: list[Finding]) -> list[str]:

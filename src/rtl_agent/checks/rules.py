@@ -11,6 +11,7 @@ class UnknownInstanceModuleRule(ScriptRule):
     title = "Unknown instance module"
     severity = "P2"
     category = "hierarchy"
+    value = "compile_overlap"
     description = "An instantiated module type is not defined in the scanned RTL scope."
 
     def run(self, index: DesignIndex) -> list[Finding]:
@@ -37,6 +38,7 @@ class MissingNamedPortRule(ScriptRule):
     title = "Instance port appears unconnected"
     severity = "P1"
     category = "integration"
+    value = "compile_overlap"
     description = "A named instance connection omits ports declared by the target module."
 
     def run(self, index: DesignIndex) -> list[Finding]:
@@ -70,6 +72,7 @@ class MissingClockOnContainerRule(ScriptRule):
     title = "No clock detected on container module"
     severity = "P2"
     category = "clock_reset"
+    value = "architecture_insight"
     description = "A module has sub-instances that appear clocked, but no clock-like port or signal is detected locally."
 
     def run(self, index: DesignIndex) -> list[Finding]:
@@ -99,6 +102,7 @@ class MissingResetOnContainerRule(ScriptRule):
     title = "No reset detected on container module"
     severity = "P3"
     category = "clock_reset"
+    value = "architecture_insight"
     description = "A module has sub-instances that appear reset-aware, but no reset-like port or signal is detected locally."
 
     def run(self, index: DesignIndex) -> list[Finding]:
@@ -150,6 +154,7 @@ class OrphanModuleRule(ScriptRule):
     title = "Unreachable module under selected top"
     severity = "P3"
     category = "hierarchy"
+    value = "architecture_insight"
     description = "A scanned module is not reachable from the selected top hierarchy."
 
     def run(self, index: DesignIndex) -> list[Finding]:
@@ -176,6 +181,7 @@ class CriticalClockResetConnectionRule(ScriptRule):
     title = "Critical clock/reset connection is open or constant"
     severity = "P1"
     category = "semantic"
+    value = "architecture_insight"
     description = "A named child clock/reset port is explicitly left open or tied to a constant, which may compile but is usually an integration bug."
 
     def run(self, index: DesignIndex) -> list[Finding]:
@@ -213,6 +219,7 @@ class MultiClockDomainRule(ScriptRule):
     title = "Module spans multiple clock domains"
     severity = "P3"
     category = "semantic"
+    value = "architecture_insight"
     description = "A non-trivial module has multiple detected clocks; VCS can compile it, but CDC intent still needs review."
 
     def run(self, index: DesignIndex) -> list[Finding]:
