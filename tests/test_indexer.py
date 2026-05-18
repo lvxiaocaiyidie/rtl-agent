@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from rtl_agent.indexer import build_index
+from rtl_agent.interrupts import build_interrupt_graph
 from rtl_agent.llm import LLMConfig, get_api_key
 from rtl_agent.modeler import build_rtl_model
 from rtl_agent.parser import _looks_like_reset
@@ -129,6 +130,39 @@ endmodule
         self.assertEqual(model["level"], "l2")
         self.assertIn("components", model)
         self.assertIn("integration_intent", model)
+
+    def test_interrupt_contract_graph_tracks_vector_aggregation(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "top.sv").write_text(
+                """
+module cpu(input clk, input [31:0] irq);
+endmodule
+
+module top(input clk, input irq_5, input irq_6);
+  localparam ENABLE_IRQ = 1;
+  reg [31:0] irq;
+  reg [5:0] regfile_size;
+  wire [31:0] status_rdata;
+  always @* begin
+    regfile_size = ENABLE_IRQ ? 32 : 16;
+    status_rdata = irq;
+    irq = 0;
+    irq[5] = irq_5;
+    irq[6] = irq_6;
+  end
+  cpu u_cpu(.clk(clk), .irq(irq));
+endmodule
+""",
+                encoding="utf-8",
+            )
+            index = build_index(root, top=["top"])
+            graph = build_interrupt_graph(index, root=root)
+            edges = {(edge.source, edge.target, edge.kind) for edge in graph.edges}
+            self.assertIn(("top.irq_5", "top.irq[5]", "aggregates_bit"), edges)
+            self.assertIn(("top.irq", "cpu.irq", "instance_connection"), edges)
+            self.assertIn(("top.irq", "top.status_rdata", "state_observation"), edges)
+            self.assertNotIn(("top.ENABLE_IRQ", "top.regfile_size", "state_observation"), edges)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from html import escape
 
 from .checks.base import Finding
 from .checks.registry import rule_metadata
+from .interrupts import build_interrupt_graph
 from .modeler import build_rtl_model
 from .models import DesignIndex
 
@@ -15,6 +16,7 @@ def render_dashboard(index: DesignIndex, findings: list[Finding], model_level: s
         "findings": [finding.to_dict() for finding in findings],
         "rules": rule_metadata(),
         "model": build_rtl_model(index, level=model_level, max_modules=160),
+        "interrupts": build_interrupt_graph(index).to_dict(),
     }
     data = json.dumps(payload)
     title = f"rtl-agent dashboard - {', '.join(index.top_modules) or 'no top'}"
@@ -86,12 +88,14 @@ def render_dashboard(index: DesignIndex, findings: list[Finding], model_level: s
       <button class="active" data-view="findings">Findings</button>
       <button data-view="hierarchy">Hierarchy</button>
       <button data-view="modules">Modules</button>
+      <button data-view="interrupts">Interrupts</button>
       <button data-view="model">Model</button>
       <button data-view="rules">Rules</button>
     </nav>
     <section id="findings" class="view active"></section>
     <section id="hierarchy" class="view"></section>
     <section id="modules" class="view"></section>
+    <section id="interrupts" class="view"></section>
     <section id="model" class="view"></section>
     <section id="rules" class="view"></section>
   </main>
@@ -161,6 +165,18 @@ def render_dashboard(index: DesignIndex, findings: list[Finding], model_level: s
       }};
       setTimeout(() => {{ $('moduleSearch').oninput = render; render(); }});
     }}
+    function initInterrupts() {{
+      const graph = data.interrupts || {{nodes: [], edges: [], summary: {{}}}};
+      const topPorts = graph.summary.top_level_interrupts || [];
+      $('interrupts').innerHTML = `<div class="two">
+        <div class="panel"><h3>Interrupt Summary</h3>
+          <p><b>Nodes</b>: ${{graph.nodes.length}}<br><b>Edges</b>: ${{graph.edges.length}}</p>
+          <p><b>Top-level interrupt ports</b><br>${{topPorts.map(x => `<span class="pill">${{esc(x.module)}}.${{esc(x.name)}} ${{esc(x.direction)}}</span>`).join('') || 'none'}}</p>
+          <p><b>Edge kinds</b><br>${{Object.entries(graph.summary.edge_kinds || {{}}).map(([k,v]) => `<span class="pill">${{esc(k)}}: ${{v}}</span>`).join('') || 'none'}}</p>
+        </div>
+        <div class="panel"><h3>Interrupt Edges</h3><table><thead><tr><th>Source</th><th>Target</th><th>Kind</th><th>Evidence</th></tr></thead><tbody>${{graph.edges.map(e => `<tr><td><code>${{esc(e.source)}}</code></td><td><code>${{esc(e.target)}}</code></td><td>${{esc(e.kind)}}</td><td>${{esc(e.evidence)}}</td></tr>`).join('')}}</tbody></table></div>
+      </div>`;
+    }}
     function initModel() {{
       const arch = data.model.architecture || {{}};
       $('model').innerHTML = `<div class="two">
@@ -176,7 +192,7 @@ def render_dashboard(index: DesignIndex, findings: list[Finding], model_level: s
     function initRules() {{
       $('rules').innerHTML = `<div class="panel"><table><thead><tr><th>Rule</th><th>Value</th><th>Category</th><th>Description</th></tr></thead><tbody>${{Object.entries(rules).map(([id,r])=>`<tr><td><b>${{esc(id)}}</b><br>${{esc(r.title)}}</td><td>${{esc(r.value)}}</td><td>${{esc(r.category)}}</td><td>${{esc(r.description)}}</td></tr>`).join('')}}</tbody></table></div>`;
     }}
-    initMetrics(); initFindings(); initHierarchy(); initModules(); initModel(); initRules();
+    initMetrics(); initFindings(); initHierarchy(); initModules(); initInterrupts(); initModel(); initRules();
   </script>
 </body>
 </html>"""

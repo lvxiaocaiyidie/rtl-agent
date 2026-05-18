@@ -21,6 +21,7 @@ python -m rtl_agent list-reduction-rules
 python -m rtl_agent list-model-levels
 python -m rtl_agent reduce examples/tiny_soc --top soc_top --max-modules 80
 python -m rtl_agent model examples/tiny_soc --top soc_top --level l3 -o out
+python -m rtl_agent interrupts examples/tiny_soc --top soc_top -o out/interrupts
 python -m rtl_agent ui examples/tiny_soc --top soc_top -o out/ui
 python -m rtl_agent check examples/tiny_soc --top soc_top --llm -o out
 python -m rtl_agent slice examples/tiny_soc --module soc_top --instance u_fabric
@@ -36,6 +37,8 @@ Artifacts:
 - `out/module_summary.md`: high-density module memory
 - `out/esl_model.yaml`: ESL-like intermediate model with source line tags
 - `out/rtl_model_l1.yaml`: layered RTL model for script, LLM, or agent workflows
+- `out/interrupt_graph.md`: interrupt contract graph with source evidence
+- `out/interrupt_graph.json`: machine-readable interrupt contract graph
 - `out/reduced_context.md`: LLM-facing reduced RTL context
 - `out/reduced_context.json`: machine-readable reduced RTL context
 - `out/reduction_rules.md`: explicit reduction policy
@@ -161,6 +164,27 @@ Model levels are intentionally layered:
 
 The current modeler is script-first. Later LLM or agent passes should annotate this model rather than replace it, so facts remain traceable back to RTL line ranges.
 
+## Interrupt Contract Graph
+
+The most useful near-term direction is not another generic RTL lint pass. It is contract modeling for SoC integration objects that are hard to flatten manually. Interrupts are the first supported slice because they often involve event sources, status or pending bits, mask or enable logic, vector aggregation, top-level interrupt pins, interrupt-controller inputs, and software-visible IRQ names.
+
+Generate the graph with:
+
+```powershell
+python -m rtl_agent interrupts path/to/rtl --top my_soc_top -o out/my_soc_interrupts
+python -m rtl_agent interrupts path/to/rtl --top my_soc_top --format json -o out/my_soc_interrupts
+```
+
+The current graph is RTL-derived and script-first. It records:
+
+- interrupt-like ports and signals (`irq`, `intr`, `interrupt`)
+- named instance interrupt connections
+- interrupt vector bit aggregation such as `irq[5] = irq_5`
+- constant or open interrupt tie-offs
+- file and line evidence for each node and edge
+
+This is deliberately shaped as an extendable contract graph. The next meaningful importers should merge project-owned evidence into the same graph instead of creating separate reports: interrupt spreadsheet rows, register table rows, address-map ownership, NoC endpoint metadata, clock/reset ownership from diagrams, and EDA-resolved connectivity from Verdi or simulation databases. LLM or agent reviewers should then explain gaps and naming mismatches on top of this graph, while scripts keep the traceable facts.
+
 ## Interactive UI
 
 Generate a static dashboard when you want to browse findings and models interactively:
@@ -170,7 +194,7 @@ python -m rtl_agent ui path/to/rtl --top my_soc_top -o out/my_soc_ui
 python -m rtl_agent ui path/to/rtl --top my_soc_top --insight-only --model-level l3 -o out/my_soc_ui
 ```
 
-Open `out/my_soc_ui/dashboard.html` in a browser, or serve that directory with any static file server. The UI includes metrics, finding filters, a hierarchy view, module search, model JSON, and rule metadata.
+Open `out/my_soc_ui/dashboard.html` in a browser, or serve that directory with any static file server. The UI includes metrics, finding filters, a hierarchy view, module search, interrupt graph exploration, model JSON, and rule metadata.
 
 For projects using Emacs verilog-mode AUTOINST/AUTOWIRE/AUTO_TEMPLATE flows, run `rtl-agent` on the expanded or generated RTL whenever possible. The current lightweight parser reads concrete module instances and named connections present in the scanned files; it does not yet execute verilog-mode expansion itself.
 
@@ -182,6 +206,7 @@ RTL source
   -> lightweight Verilog/SystemVerilog extraction
   -> design index and hierarchy
   -> fact IR and layered RTL models with file:line evidence
+  -> contract graphs for interrupt/register/address/NoC/CRG evidence
   -> SOC integration checks split into compile-overlap and architecture-insight classes
   -> optional OpenAI-compatible or agent reasoning layer
   -> interactive dashboard
@@ -205,10 +230,12 @@ The current MVP can run without an API key. LLM calls are isolated behind `OpenA
 ## Roadmap
 
 1. Robust local RTL indexing
-2. SOC integration checks: ports, widths, resets, clocks, hierarchy, protocols
-3. ESL-like model extraction for NoC, LLC, bus fabric, CSR, interrupt, and address-map structures
-4. GitHub PR workflow integration
-5. Model-driven patch generation for wrappers, adapters, top-level wiring, CSR glue, and testbench skeletons
+2. SOC integration checks: hierarchy, clock/reset intent, cross-domain and contract consistency
+3. Contract graph extraction for interrupt, register, address-map, NoC, CRG, debug, and DFT relationships
+4. Importers for project evidence: spreadsheets, generated register metadata, Verdi/sim database connectivity, and script outputs
+5. ESL-like model extraction for NoC, LLC, bus fabric, CSR, interrupt, and address-map structures
+6. GitHub PR workflow integration
+7. Model-driven patch generation for wrappers, adapters, top-level wiring, CSR glue, and testbench skeletons
 
 ## Open-Source RTL Smoke Test
 

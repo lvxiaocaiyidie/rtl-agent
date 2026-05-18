@@ -81,28 +81,44 @@ def _extract_parameters(text: str, rel: str, base_line: int) -> list[Parameter]:
 
 def _extract_ports(header: str, body: str, rel: str, base_line: int) -> list[Port]:
     ports: list[Port] = []
-    port_re = re.compile(
-        r"^\s*(input|output|inout)\b\s*(?P<rest>.*?)(?:[,;]?\s*)$",
-    )
     for region, offset in ((header, 0), (body, header.count("\n"))):
+        current_direction = ""
+        current_width = ""
+        current_types = ""
         for idx, line_text in enumerate(region.splitlines()):
-            match = port_re.match(line_text)
-            if not match:
-                continue
-            direction = match.group(1)
-            rest = match.group("rest").strip().rstrip(",;)")
-            width_match = re.search(r"\[[^\]]+\]", rest)
-            width = width_match.group(0) if width_match else ""
-            without_width = re.sub(r"\[[^\]]+\]", " ", rest)
-            type_tokens = [
-                token
-                for token in re.findall(r"[a-zA-Z_][\w$]*", without_width)
-                if token in {"wire", "reg", "logic", "signed", "unsigned"} or token.endswith("_t") or "::" in token
-            ]
-            for name in _split_names(without_width):
-                if name and name not in KEYWORDS and name not in {"wire", "reg", "logic", "signed", "unsigned"}:
-                    ports.append(Port(name, direction, " ".join(type_tokens), width, SourceRange(rel, base_line + offset + idx, base_line + offset + idx)))
+            for chunk in _port_chunks(line_text):
+                match = re.match(r"^\s*(input|output|inout)\b\s*(?P<rest>.*)$", chunk)
+                if match:
+                    current_direction = match.group(1)
+                    rest = match.group("rest").strip().rstrip(",;)")
+                elif current_direction:
+                    rest = chunk.strip().rstrip(",;)")
+                else:
+                    continue
+                if not rest:
+                    continue
+                width_match = re.search(r"\[[^\]]+\]", rest)
+                width = width_match.group(0) if width_match else current_width
+                without_width = re.sub(r"\[[^\]]+\]", " ", rest)
+                type_tokens = [
+                    token
+                    for token in re.findall(r"[a-zA-Z_][\w$]*", without_width)
+                    if token in {"wire", "reg", "logic", "signed", "unsigned"} or token.endswith("_t") or "::" in token
+                ]
+                if match:
+                    current_width = width
+                    current_types = " ".join(type_tokens)
+                data_type = " ".join(type_tokens) or (current_types if not match else "")
+                for name in _split_names(without_width):
+                    if name and name not in KEYWORDS and name not in {"wire", "reg", "logic", "signed", "unsigned"}:
+                        ports.append(Port(name, current_direction, data_type, width, SourceRange(rel, base_line + offset + idx, base_line + offset + idx)))
     return _unique_by_name(ports)
+
+
+def _port_chunks(line_text: str) -> list[str]:
+    text = line_text.strip()
+    text = text.lstrip("(").rstrip("),;")
+    return [chunk.strip() for chunk in text.split(",") if chunk.strip()]
 
 
 def _extract_signals(body: str, rel: str, base_line: int) -> list[Signal]:

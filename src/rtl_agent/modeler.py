@@ -5,6 +5,7 @@ from collections import Counter
 from typing import Any
 
 from .models import DesignIndex, Module
+from .interrupts import build_interrupt_graph
 
 MODEL_LEVELS = [
     {
@@ -65,12 +66,21 @@ def build_rtl_model(index: DesignIndex, level: str = "l1", max_modules: int = 20
             "protocol_hints": _protocol_hints(modules),
             "clock_domains": _clock_domain_summary(modules),
         }
+    intr_graph = None
     if level in {"l3", "l4"}:
         model["architecture"] = _architecture_model(index, modules)
+        intr_graph = build_interrupt_graph(index)
+        model["interrupt_contract"] = {
+            "node_count": len(intr_graph.nodes),
+            "edge_count": len(intr_graph.edges),
+            "top_level_interrupts": intr_graph.summary["top_level_interrupts"],
+            "edge_kinds": intr_graph.summary["edge_kinds"],
+        }
     if level == "l4":
         model["generation_plan"] = {
             "blackbox_tasks": [{"module": name, "action": "provide_model_or_stub"} for name in index.unresolved_modules[:80]],
             "wrapper_candidates": _wrapper_candidates(modules),
+            "interrupt_contract_tasks": _interrupt_tasks(intr_graph.to_dict()),
             "review_queries": _review_queries(index, modules[:40]),
         }
     return model
@@ -191,6 +201,17 @@ def _wrapper_candidates(modules: list[Module]) -> list[dict[str, Any]]:
         if module.role in {"integration_wrapper", "bus_or_protocol_logic"} and len(module.ports) > 20:
             candidates.append({"module": module.name, "port_count": len(module.ports), "source": module.source.label()})
     return candidates[:80]
+
+
+def _interrupt_tasks(graph: dict[str, Any]) -> list[dict[str, str]]:
+    tasks = []
+    if graph["summary"]["top_level_interrupts"]:
+        tasks.append({"task": "map_top_interrupt_ports_to_software_irq_numbers"})
+    if graph["summary"]["edge_kinds"].get("aggregates_bit", 0):
+        tasks.append({"task": "review_interrupt_vector_bit_assignments"})
+    if graph["summary"]["edge_kinds"].get("constant_assignment", 0):
+        tasks.append({"task": "confirm_tied_off_interrupt_sources_are_intentional"})
+    return tasks
 
 
 def _clock_domain_summary(modules: list[Module]) -> list[dict[str, Any]]:

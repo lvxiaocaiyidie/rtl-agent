@@ -6,6 +6,7 @@ from pathlib import Path
 from .checks import render_rule_list, run_checks
 from .checks.llm_rules import LLMIntegrationReviewRule
 from .dashboard import render_dashboard
+from .interrupts import render_interrupt_json, render_interrupt_markdown
 from .indexer import build_index
 from .llm import OpenAICompatibleClient, has_api_key, load_llm_config
 from .modeler import render_model_json, render_model_levels, render_model_yaml
@@ -77,6 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     ui_p.add_argument("--include-orphans", action="store_true", help="Include orphan findings in the dashboard.")
     ui_p.add_argument("--insight-only", action="store_true", help="Show only architecture/integration insight checks.")
     ui_p.add_argument("--model-level", choices=["l0", "l1", "l2", "l3", "l4"], default="l3")
+
+    intr_p = sub.add_parser("interrupts", help="Emit an interrupt contract graph from RTL hierarchy and connections.")
+    intr_p.add_argument("rtl_root")
+    intr_p.add_argument("-o", "--out", default="out")
+    intr_p.add_argument("--top", action="append", default=[], help="Explicit top module name. Can be repeated.")
+    intr_p.add_argument("--top-file", help="Treat all modules defined in this file as explicit top modules.")
+    intr_p.add_argument("--format", choices=["md", "json"], default="md")
 
     sub.add_parser("list-rules", help="List script and reserved LLM check rules.")
     sub.add_parser("list-reduction-rules", help="List RTL reduction rules used for model-facing context.")
@@ -156,6 +164,16 @@ def main(argv: list[str] | None = None) -> int:
         path = out / "dashboard.html"
         path.write_text(render_dashboard(index, findings, model_level=args.model_level), encoding="utf-8")
         print(f"Wrote interactive dashboard to {path}")
+        return 0
+    if args.cmd == "interrupts":
+        index = _build_index_from_args(root, args)
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        text = render_interrupt_json(index, root=root.resolve()) if args.format == "json" else render_interrupt_markdown(index, root=root.resolve())
+        suffix = "json" if args.format == "json" else "md"
+        path = out / f"interrupt_graph.{suffix}"
+        path.write_text(text, encoding="utf-8")
+        print(f"Wrote interrupt graph to {path}")
         return 0
     return 1
 

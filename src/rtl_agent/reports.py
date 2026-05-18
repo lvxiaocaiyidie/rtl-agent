@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .checks import run_checks
 from .checks.base import Finding
+from .interrupts import render_interrupt_json, render_interrupt_markdown
 from .modeler import render_model_yaml
 from .models import DesignIndex, Module
 from .reducer import render_llm_context, render_reduced_json, render_reduction_rules
@@ -19,6 +20,8 @@ def write_artifacts(index: DesignIndex, out_dir: Path) -> None:
     (out_dir / "module_summary.md").write_text(render_module_summary(index), encoding="utf-8")
     (out_dir / "esl_model.yaml").write_text(render_esl_model(index), encoding="utf-8")
     (out_dir / "rtl_model_l1.yaml").write_text(render_model_yaml(index, level="l1"), encoding="utf-8")
+    (out_dir / "interrupt_graph.md").write_text(render_interrupt_markdown(index), encoding="utf-8")
+    (out_dir / "interrupt_graph.json").write_text(render_interrupt_json(index), encoding="utf-8")
     (out_dir / "reduced_context.md").write_text(render_llm_context(index), encoding="utf-8")
     (out_dir / "reduced_context.json").write_text(render_reduced_json(index), encoding="utf-8")
     (out_dir / "reduction_rules.md").write_text(render_reduction_rules(), encoding="utf-8")
